@@ -1,8 +1,89 @@
 import React, { useState, useEffect } from 'react';
 import { Home, Mic, Headphones, BarChart3, Play, Volume2, Trophy, Calendar, MessageCircle, RotateCcw, Square, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
-import questionsService from './services/questionsService';
-import useSpeechPractice from './hooks/useSpeechPractice';
-import useProgress from './hooks/useProgress';
+
+// Hooks simplificados temporales
+const useSimpleProgress = () => {
+  const [progress] = useState({
+    totalDays: 1,
+    currentStreak: 1,
+    totalRecordings: 0,
+    questionsAnswered: 0,
+    currentLevel: 'beginner',
+    achievements: [],
+    dailyGoal: 5,
+    todayProgress: 0,
+    completionRate: 0,
+    isGoalCompleted: false,
+    questionsRemaining: 5
+  });
+
+  const recordAnswer = () => {
+    console.log('Answer recorded');
+  };
+
+  return { progress, recordAnswer };
+};
+
+const useSimpleSpeechPractice = () => {
+  const [isRecording, setIsRecording] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isPlayingQuestion, setIsPlayingQuestion] = useState(false);
+  const [transcript, setTranscript] = useState('');
+  const [feedback, setFeedback] = useState(null);
+  const [error, setError] = useState(null);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+
+  const startRecording = () => {
+    setIsRecording(true);
+    setError(null);
+    console.log('Recording started...');
+  };
+
+  const stopRecording = () => {
+    setIsRecording(false);
+    setIsProcessing(true);
+    setTimeout(() => {
+      setIsProcessing(false);
+      setTranscript('Hello, this is a test response');
+      setFeedback({
+        success: true,
+        message: 'Great job! Your pronunciation is clear.',
+        transcript: 'Hello, this is a test response',
+        confidence: 0.85
+      });
+    }, 2000);
+  };
+
+  const playQuestion = (text) => {
+    setIsPlayingQuestion(true);
+    console.log('Playing:', text);
+    setTimeout(() => setIsPlayingQuestion(false), 2000);
+  };
+
+  const playExample = (text) => console.log('Playing example:', text);
+  const playRecording = () => console.log('Playing recording');
+  const clearSession = () => {
+    setTranscript('');
+    setFeedback(null);
+    setError(null);
+  };
+  const clearError = () => setError(null);
+
+  return {
+    isRecording, isProcessing, isPlayingQuestion, transcript, feedback, error, recordingDuration,
+    startRecording, stopRecording, playQuestion, playExample, playRecording, clearSession, clearError
+  };
+};
+
+// Servicio de preguntas simplificado
+const simpleQuestionsService = {
+  getNextQuestion: () => ({
+    question: "What's your name?",
+    level: 'beginner',
+    category: 'personal',
+    sampleAnswer: "My name is Brayan and I'm learning English."
+  })
+};
 
 const EnglishPracticeApp = () => {
   const [currentScreen, setCurrentScreen] = useState('home');
@@ -10,35 +91,19 @@ const EnglishPracticeApp = () => {
   const [messages, setMessages] = useState([]);
   
   // Hooks
-  const {
-    isRecording,
-    isProcessing,
-    isPlayingQuestion,
-    transcript,
-    feedback,
-    error,
-    recordingDuration,
-    startRecording,
-    stopRecording,
-    playQuestion,
-    playExample,
-    playRecording,
-    clearSession,
-    clearError
-  } = useSpeechPractice();
-
-  const { progress, recordAnswer } = useProgress();
+  const speechPractice = useSimpleSpeechPractice();
+  const { progress, recordAnswer } = useSimpleProgress();
 
   // Inicializar primera pregunta
   useEffect(() => {
     if (!currentQuestion) {
-      const question = questionsService.getNextQuestion();
+      const question = simpleQuestionsService.getNextQuestion();
       setCurrentQuestion(question);
       initializeChat(question);
     }
   }, [currentQuestion]);
 
-  // Inicializar chat con mensajes de bienvenida
+  // Inicializar chat
   const initializeChat = (question) => {
     const welcomeMessages = [
       {
@@ -73,8 +138,8 @@ const EnglishPracticeApp = () => {
 
   // Manejar nueva pregunta
   const getNewQuestion = () => {
-    clearSession();
-    const question = questionsService.getNextQuestion();
+    speechPractice.clearSession();
+    const question = simpleQuestionsService.getNextQuestion();
     setCurrentQuestion(question);
     
     const newMessage = {
@@ -91,40 +156,34 @@ const EnglishPracticeApp = () => {
 
   // Manejar respuesta completada
   useEffect(() => {
-    if (feedback && feedback.success) {
-      // Agregar mensaje del usuario
+    if (speechPractice.feedback && speechPractice.feedback.success) {
       const userMessage = {
         id: messages.length + 1,
         type: 'user',
-        content: feedback.transcript,
+        content: speechPractice.feedback.transcript,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         hasAudio: true,
-        audioUrl: feedback.audioUrl,
-        duration: feedback.duration,
-        confidence: feedback.confidence
+        duration: 3,
+        confidence: speechPractice.feedback.confidence
       };
 
-      // Agregar respuesta del bot
       const botMessage = {
         id: messages.length + 2,
         type: 'bot',
-        content: feedback.message,
+        content: speechPractice.feedback.message,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         isFeedback: true
       };
 
       setMessages(prev => [...prev, userMessage, botMessage]);
-      
-      // Registrar progreso
-      recordAnswer(currentQuestion, feedback.audioBlob);
+      recordAnswer(currentQuestion);
     }
-  }, [feedback, currentQuestion, recordAnswer]);
+  }, [speechPractice.feedback, currentQuestion, recordAnswer, messages.length]);
 
-  // 🏠 Pantalla Principal (Home)
+  // 🏠 Pantalla Principal
   const HomeScreen = () => (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
       <div className="max-w-md mx-auto">
-        {/* Saludo personalizado */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">👋 Hi Brayan!</h1>
           <p className="text-gray-600">Ready to practice your English?</p>
@@ -142,7 +201,6 @@ const EnglishPracticeApp = () => {
           </div>
         </div>
 
-        {/* 3 Botones principales */}
         <div className="space-y-4">
           <button 
             onClick={() => setCurrentScreen('speaking')}
@@ -172,10 +230,9 @@ const EnglishPracticeApp = () => {
     </div>
   );
 
-  // 🎙️ Pantalla de Práctica de Habla
+  // 🎙️ Pantalla de Práctica
   const SpeakingScreen = () => (
     <div className="min-h-screen bg-gray-100 flex flex-col">
-      {/* Header estilo WhatsApp */}
       <div className="bg-green-600 text-white p-4 shadow-lg">
         <div className="flex items-center justify-between">
           <div className="flex items-center">
@@ -192,7 +249,7 @@ const EnglishPracticeApp = () => {
               <div>
                 <h2 className="font-semibold">English Practice Bot</h2>
                 <p className="text-sm text-green-200">
-                  {isRecording ? 'Listening...' : isProcessing ? 'Processing...' : 'Online'}
+                  {speechPractice.isRecording ? 'Listening...' : speechPractice.isProcessing ? 'Processing...' : 'Online'}
                 </p>
               </div>
             </div>
@@ -207,17 +264,16 @@ const EnglishPracticeApp = () => {
         </div>
       </div>
 
-      {/* Error Message */}
-      {error && (
+      {speechPractice.error && (
         <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 m-4">
           <div className="flex items-center">
             <AlertCircle size={20} className="mr-2" />
             <div>
               <p className="font-medium">Error</p>
-              <p className="text-sm">{error}</p>
+              <p className="text-sm">{speechPractice.error}</p>
             </div>
             <button 
-              onClick={clearError}
+              onClick={speechPractice.clearError}
               className="ml-auto text-red-500 hover:text-red-700"
             >
               ✕
@@ -226,7 +282,6 @@ const EnglishPracticeApp = () => {
         </div>
       )}
 
-      {/* Chat Messages */}
       <div className="flex-1 p-4 space-y-4 overflow-y-auto">
         {messages.map((message) => (
           <div key={message.id} className={`flex ${message.type === 'user' ? 'justify-end' : 'items-start'}`}>
@@ -241,30 +296,27 @@ const EnglishPracticeApp = () => {
                 ? 'bg-green-500 text-white rounded-tr-none' 
                 : 'bg-white rounded-tl-none'
             }`}>
-              {/* Contenido del mensaje */}
               <p className={message.type === 'user' ? 'text-white' : 'text-gray-800'}>
                 {message.content}
               </p>
               
-              {/* Audio player para preguntas */}
               {message.hasAudio && message.question && (
                 <div className="mt-2 flex items-center space-x-2">
                   <button 
-                    onClick={() => playQuestion(message.question)}
-                    disabled={isPlayingQuestion}
+                    onClick={() => speechPractice.playQuestion(message.question)}
+                    disabled={speechPractice.isPlayingQuestion}
                     className="bg-green-500 text-white p-2 rounded-full hover:bg-green-600 disabled:opacity-50"
                   >
-                    {isPlayingQuestion ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+                    {speechPractice.isPlayingQuestion ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
                   </button>
                   <span className="text-xs text-gray-600">🔊 Tap to hear pronunciation</span>
                 </div>
               )}
               
-              {/* Audio player para ejemplos */}
               {message.isExample && message.exampleText && (
                 <div className="mt-2 flex items-center space-x-2">
                   <button 
-                    onClick={() => playExample(message.exampleText)}
+                    onClick={() => speechPractice.playExample(message.exampleText)}
                     className="bg-blue-500 text-white p-2 rounded-full hover:bg-blue-600"
                   >
                     <Volume2 size={16} />
@@ -273,11 +325,10 @@ const EnglishPracticeApp = () => {
                 </div>
               )}
               
-              {/* Audio player para respuestas del usuario */}
               {message.type === 'user' && message.hasAudio && (
                 <div className="mt-2 flex items-center space-x-2">
                   <button 
-                    onClick={playRecording}
+                    onClick={speechPractice.playRecording}
                     className="bg-green-400 text-white p-1 rounded-full hover:bg-green-300"
                   >
                     <Play size={12} />
@@ -297,14 +348,9 @@ const EnglishPracticeApp = () => {
                 </div>
               )}
               
-              {/* Feedback styling */}
               {message.isFeedback && (
                 <div className="mt-2">
-                  {feedback?.success ? (
-                    <CheckCircle size={16} className="text-green-500 inline mr-1" />
-                  ) : (
-                    <AlertCircle size={16} className="text-orange-500 inline mr-1" />
-                  )}
+                  <CheckCircle size={16} className="text-green-500 inline mr-1" />
                 </div>
               )}
               
@@ -317,18 +363,16 @@ const EnglishPracticeApp = () => {
           </div>
         ))}
         
-        {/* Transcript en tiempo real */}
-        {isRecording && transcript && (
+        {speechPractice.isRecording && speechPractice.transcript && (
           <div className="flex justify-end">
             <div className="bg-gray-300 text-gray-700 rounded-lg rounded-tr-none p-3 shadow-sm max-w-xs">
-              <p className="italic">"{transcript}"</p>
+              <p className="italic">"{speechPractice.transcript}"</p>
               <span className="text-xs text-gray-500">Recording...</span>
             </div>
           </div>
         )}
         
-        {/* Processing indicator */}
-        {isProcessing && (
+        {speechPractice.isProcessing && (
           <div className="flex items-start">
             <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center mr-2 text-white text-sm">
               🤖
@@ -343,38 +387,35 @@ const EnglishPracticeApp = () => {
         )}
       </div>
 
-      {/* Input area estilo WhatsApp */}
       <div className="bg-white border-t p-4">
         <div className="flex items-center space-x-3">
-          {/* Botón para reproducir pregunta actual */}
           <button 
-            onClick={() => currentQuestion && playQuestion(currentQuestion.question)}
-            disabled={isPlayingQuestion || isRecording}
+            onClick={() => currentQuestion && speechPractice.playQuestion(currentQuestion.question)}
+            disabled={speechPractice.isPlayingQuestion || speechPractice.isRecording}
             className="bg-gray-200 hover:bg-gray-300 disabled:opacity-50 p-3 rounded-full"
           >
-            {isPlayingQuestion ? (
+            {speechPractice.isPlayingQuestion ? (
               <Loader2 size={20} className="text-gray-600 animate-spin" />
             ) : (
               <Volume2 size={20} className="text-gray-600" />
             )}
           </button>
           
-          {/* Botón principal de grabación */}
           <button 
-            onClick={isRecording ? stopRecording : startRecording}
-            disabled={isProcessing || isPlayingQuestion}
+            onClick={speechPractice.isRecording ? speechPractice.stopRecording : speechPractice.startRecording}
+            disabled={speechPractice.isProcessing || speechPractice.isPlayingQuestion}
             className={`p-3 rounded-full flex-1 flex items-center justify-center space-x-2 transition-colors disabled:opacity-50 ${
-              isRecording 
+              speechPractice.isRecording 
                 ? 'bg-red-500 hover:bg-red-600 text-white' 
                 : 'bg-green-500 hover:bg-green-600 text-white'
             }`}
           >
-            {isRecording ? (
+            {speechPractice.isRecording ? (
               <>
                 <Square size={20} />
-                <span>Stop Recording ({recordingDuration}s)</span>
+                <span>Stop Recording ({speechPractice.recordingDuration}s)</span>
               </>
-            ) : isProcessing ? (
+            ) : speechPractice.isProcessing ? (
               <>
                 <Loader2 size={20} className="animate-spin" />
                 <span>Processing...</span>
@@ -387,18 +428,16 @@ const EnglishPracticeApp = () => {
             )}
           </button>
           
-          {/* Botón para nueva pregunta */}
           <button 
             onClick={getNewQuestion}
-            disabled={isRecording || isProcessing}
+            disabled={speechPractice.isRecording || speechPractice.isProcessing}
             className="bg-gray-200 hover:bg-gray-300 disabled:opacity-50 p-3 rounded-full"
           >
             <RotateCcw size={20} className="text-gray-600" />
           </button>
         </div>
         
-        {/* Recording indicator */}
-        {isRecording && (
+        {speechPractice.isRecording && (
           <div className="mt-2 text-center">
             <div className="flex items-center justify-center space-x-2">
               <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
@@ -410,213 +449,34 @@ const EnglishPracticeApp = () => {
     </div>
   );
 
-  // 🎧 Pantalla Listen & Repeat
+  // Pantallas simples para Listening y Progress
   const ListeningScreen = () => (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 p-6">
+    <div className="min-h-screen bg-green-50 p-6">
       <div className="max-w-md mx-auto">
-        {/* Header */}
         <div className="flex items-center mb-6">
-          <button 
-            onClick={() => setCurrentScreen('home')}
-            className="p-2 rounded-lg bg-white shadow-md hover:bg-gray-50"
-          >
+          <button onClick={() => setCurrentScreen('home')} className="p-2 rounded-lg bg-white shadow-md">
             <Home size={20} />
           </button>
           <h2 className="text-2xl font-bold text-gray-800 ml-4">🎧 Listen & Repeat</h2>
         </div>
-
-        {/* Contenido de listening */}
-        <div className="bg-white rounded-xl p-6 shadow-lg mb-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Current Phrase:</h3>
-          <div className="bg-gray-50 rounded-lg p-4 mb-6">
-            <p className="text-xl text-gray-700 text-center font-medium">
-              {currentQuestion ? currentQuestion.question : "Loading..."}
-            </p>
-          </div>
-          
-          <div className="flex justify-center space-x-4">
-            <button 
-              onClick={() => currentQuestion && playQuestion(currentQuestion.question)}
-              disabled={isPlayingQuestion}
-              className="bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white p-4 rounded-full shadow-lg"
-            >
-              {isPlayingQuestion ? <Loader2 size={24} className="animate-spin" /> : <Play size={24} />}
-            </button>
-            <button 
-              onClick={isRecording ? stopRecording : startRecording}
-              disabled={isProcessing}
-              className={`p-4 rounded-full shadow-lg text-white ${
-                isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'
-              }`}
-            >
-              {isRecording ? <Square size={24} /> : <Mic size={24} />}
-            </button>
-            <button 
-              onClick={getNewQuestion}
-              disabled={isRecording || isProcessing}
-              className="bg-gray-500 hover:bg-gray-600 disabled:opacity-50 text-white p-4 rounded-full shadow-lg"
-            >
-              <RotateCcw size={24} />
-            </button>
-          </div>
-          
-          {/* Live transcript */}
-          {(isRecording || transcript) && (
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-              <p className="text-sm text-gray-600 mb-1">Your response:</p>
-              <p className="text-gray-800 italic">"{transcript || 'Listening...'}"</p>
-            </div>
-          )}
-          
-          {/* Feedback */}
-          {feedback && (
-            <div className={`mt-4 p-3 rounded-lg ${
-              feedback.success ? 'bg-green-50 border border-green-200' : 'bg-orange-50 border border-orange-200'
-            }`}>
-              <p className={`font-medium ${feedback.success ? 'text-green-800' : 'text-orange-800'}`}>
-                {feedback.message}
-              </p>
-              {feedback.suggestions && feedback.suggestions.length > 0 && (
-                <div className="mt-2">
-                  <p className="text-sm text-gray-600">Suggestions:</p>
-                  <ul className="text-sm text-gray-700 list-disc list-inside">
-                    {feedback.suggestions.map((suggestion, index) => (
-                      <li key={index}>{suggestion}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Progress */}
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Today's Progress</h3>
-          <div className="bg-gray-200 rounded-full h-4 mb-3">
-            <div 
-              className="bg-green-500 h-4 rounded-full transition-all duration-500"
-              style={{ width: `${progress.completionRate}%` }}
-            ></div>
-          </div>
-          <p className="text-sm text-gray-600">
-            {progress.todayProgress} of {progress.dailyGoal} questions completed
-          </p>
-          
-          {progress.isGoalCompleted && (
-            <div className="mt-3 p-2 bg-green-100 rounded-lg text-center">
-              <span className="text-green-700 font-medium">🎉 Daily goal completed!</span>
-            </div>
-          )}
+        <div className="bg-white rounded-xl p-6 shadow-lg">
+          <p className="text-gray-600">Coming soon... 🚧</p>
         </div>
       </div>
     </div>
   );
 
-  // 📊 Pantalla de Progreso
   const ProgressScreen = () => (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-violet-100 p-6">
+    <div className="min-h-screen bg-purple-50 p-6">
       <div className="max-w-md mx-auto">
-        {/* Header */}
         <div className="flex items-center mb-6">
-          <button 
-            onClick={() => setCurrentScreen('home')}
-            className="p-2 rounded-lg bg-white shadow-md hover:bg-gray-50"
-          >
+          <button onClick={() => setCurrentScreen('home')} className="p-2 rounded-lg bg-white shadow-md">
             <Home size={20} />
           </button>
           <h2 className="text-2xl font-bold text-gray-800 ml-4">📊 My Progress</h2>
         </div>
-
-        {/* Stats Cards */}
-        <div className="space-y-4">
-          {/* Días practicando */}
-          <div className="bg-white rounded-xl p-6 shadow-lg">
-            <div className="flex items-center">
-              <Calendar className="text-blue-500 mr-3" size={24} />
-              <div>
-                <h3 className="font-semibold text-gray-800">🕒 Days Practicing</h3>
-                <p className="text-2xl font-bold text-blue-500">{progress.totalDays} days</p>
-                <p className="text-sm text-gray-600">Current streak: {progress.currentStreak} days</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Respuestas grabadas */}
-          <div className="bg-white rounded-xl p-6 shadow-lg">
-            <div className="flex items-center">
-              <MessageCircle className="text-green-500 mr-3" size={24} />
-              <div>
-                <h3 className="font-semibold text-gray-800">🔊 Total Progress</h3>
-                <p className="text-2xl font-bold text-green-500">{progress.questionsAnswered} questions</p>
-                <p className="text-sm text-gray-600">{progress.totalRecordings} recordings made</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Progreso de hoy */}
-          <div className="bg-white rounded-xl p-6 shadow-lg">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center">
-                <Trophy className="text-yellow-500 mr-3" size={24} />
-                <h3 className="font-semibold text-gray-800">📅 Today's Goal</h3>
-              </div>
-              <span className="text-lg font-bold text-gray-800">
-                {progress.todayProgress}/{progress.dailyGoal}
-              </span>
-            </div>
-            <div className="bg-gray-200 rounded-full h-3 mb-2">
-              <div 
-                className="bg-yellow-500 h-3 rounded-full transition-all duration-500"
-                style={{ width: `${progress.completionRate}%` }}
-              ></div>
-            </div>
-            <p className="text-sm text-gray-600">
-              {progress.isGoalCompleted ? 
-                '🎉 Goal completed!' : 
-                `${progress.questionsRemaining} questions remaining`
-              }
-            </p>
-          </div>
-
-          {/* Logros */}
-          {progress.achievements && progress.achievements.length > 0 && (
-            <div className="bg-white rounded-xl p-6 shadow-lg">
-              <div className="flex items-center mb-3">
-                <Trophy className="text-yellow-500 mr-3" size={24} />
-                <h3 className="font-semibold text-gray-800">🥇 Achievements</h3>
-              </div>
-              <div className="space-y-2">
-                {progress.achievements.slice(-3).map((achievement, index) => (
-                  <div key={achievement.id || index} className="bg-yellow-100 p-3 rounded-lg">
-                    <div className="flex items-center">
-                      <span className="text-lg mr-2">🏆</span>
-                      <div>
-                        <p className="font-medium text-yellow-800">{achievement.title}</p>
-                        <p className="text-sm text-yellow-700">{achievement.description}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Nivel actual */}
-          <div className="bg-white rounded-xl p-6 shadow-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-gray-800">📈 Current Level</h3>
-                <p className="text-xl font-bold text-purple-500 capitalize">{progress.currentLevel}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm text-gray-600">Level Progress</p>
-                <p className="text-lg font-bold text-gray-800">
-                  {Math.min(100, Math.round((progress.questionsAnswered / 10) * 100))}%
-                </p>
-              </div>
-            </div>
-          </div>
+        <div className="bg-white rounded-xl p-6 shadow-lg">
+          <p className="text-gray-600">Progress tracking coming soon... 📈</p>
         </div>
       </div>
     </div>
