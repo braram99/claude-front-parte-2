@@ -1,13 +1,14 @@
-// src/EnglishPracticeApp.jsx - Quick Fix Version
+// src/EnglishPracticeApp.jsx - Arreglado con pantalla original y speech recognition
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Home, Mic, Headphones, BarChart3, Play, Volume2, RotateCcw, Square, Loader2, CheckCircle, AlertCircle, StopCircle, MessageCircle } from 'lucide-react';
+import { Home, Mic, Headphones, BarChart3, Play, Volume2, RotateCcw, Square, Loader2, CheckCircle, StopCircle, MessageCircle } from 'lucide-react';
 
 // Hooks originales
 import useAudioRecorder from './hooks/useAudioRecorder';
 import useProgress from './hooks/useProgress';
 import questionsService from './services/questionsService';
 
-// 🔧 AI Service simplificado temporal (para evitar errores de import)
+// 🤖 AI Service simplificado
 const tempAIService = {
   async analyzeAndRespond(question, transcript) {
     console.log('🤖 AI analyzing:', { question, transcript });
@@ -27,7 +28,6 @@ const tempAIService = {
         };
       }
 
-      // Análisis básico
       const words = cleanTranscript.toLowerCase().split(/\s+/).filter(word => word.length > 0);
       const wordCount = words.length;
       
@@ -63,7 +63,6 @@ const tempAIService = {
       if (wordCount < 10) suggestions.push('Add more details to your answer');
       suggestions.push('You\'re doing great, keep practicing!');
 
-      // Follow-up question simple
       const followUpQuestions = [
         "That's interesting! Can you tell me more about that?",
         "What do you like most about that?",
@@ -84,7 +83,6 @@ const tempAIService = {
         audioText,
         followUpQuestion,
         shouldSpeak: true,
-        // Análisis detallado simplificado
         grammar: { score: Math.min(100, score + 10), issues: [] },
         vocabulary: { score: Math.min(100, score + 5), uniqueWords: new Set(words).size, advancedWords: 0 },
         fluency: { score, wordCount }
@@ -105,6 +103,7 @@ const tempAIService = {
   }
 };
 
+// 🎤 Hook de speech practice mejorado
 const useSpeechPractice = () => {
   const audioRecorder = useAudioRecorder();
   const [isProcessing, setIsProcessing] = useState(false);
@@ -152,7 +151,6 @@ const useSpeechPractice = () => {
       
       const utterance = new SpeechSynthesisUtterance(responseText);
       
-      // Configurar voz según mood
       const voiceConfigs = {
         encouraging: { rate: 0.9, pitch: 1.1, volume: 0.9 },
         supportive: { rate: 0.85, pitch: 1.0, volume: 0.8 },
@@ -177,9 +175,13 @@ const useSpeechPractice = () => {
     }
   }, []);
 
+  // 🎤 Speech Recognition mejorado
   const startListening = useCallback(() => {
+    console.log('🎤 Starting speech recognition...');
+    
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
       console.warn('Speech recognition not supported');
+      setError('Speech recognition not supported in this browser');
       return;
     }
 
@@ -191,31 +193,54 @@ const useSpeechPractice = () => {
       recognition.continuous = false;
       recognition.interimResults = true;
       recognition.lang = 'en-US';
+      recognition.maxAlternatives = 1;
+
+      let finalTranscriptResult = '';
+
+      recognition.onstart = () => {
+        console.log('🎤 Speech recognition started');
+      };
 
       recognition.onresult = (event) => {
-        let finalTranscript = '';
+        console.log('📝 Speech recognition result:', event);
+        
+        let interimTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
+            finalTranscriptResult += transcript;
+          } else {
+            interimTranscript += transcript;
           }
         }
-        if (finalTranscript) {
-          setTranscript(finalTranscript);
-          console.log('📝 Transcript captured:', finalTranscript);
+        
+        if (finalTranscriptResult) {
+          console.log('✅ Final transcript:', finalTranscriptResult);
+          setTranscript(finalTranscriptResult);
+        }
+      };
+
+      recognition.onend = () => {
+        console.log('🎤 Speech recognition ended');
+        if (finalTranscriptResult) {
+          console.log('📝 Setting final transcript:', finalTranscriptResult);
+          setTranscript(finalTranscriptResult);
         }
       };
 
       recognition.onerror = (event) => {
-        console.warn('Speech recognition error:', event.error);
+        console.error('🚨 Speech recognition error:', event.error);
+        setError(`Speech recognition error: ${event.error}`);
       };
 
       recognition.start();
     } catch (error) {
       console.error('Speech recognition setup error:', error);
+      setError('Failed to start speech recognition');
     }
   }, []);
 
-  // Procesar con AI temporal
+  // Procesar cuando hay nueva grabación
   useEffect(() => {
     if (audioRecorder.audioBlob && 
         !audioRecorder.isRecording && 
@@ -226,9 +251,10 @@ const useSpeechPractice = () => {
       setIsProcessing(true);
       processedAudioRef.current = audioRecorder.audioBlob;
       
-      if (audioRecorder.audioUrl) {
+      // Iniciar speech recognition automáticamente
+      setTimeout(() => {
         startListening();
-      }
+      }, 500);
       
       setTimeout(async () => {
         const duration = audioRecorder.duration;
@@ -260,7 +286,6 @@ const useSpeechPractice = () => {
             question: currentQuestion
           });
           
-          // Reproducir audio automáticamente
           setTimeout(() => {
             if (aiResponseData.audioText) {
               playAIResponse(aiResponseData.audioText, aiResponseData.mood);
@@ -281,7 +306,7 @@ const useSpeechPractice = () => {
         }
         
         setIsProcessing(false);
-      }, 2000);
+      }, 3000); // Más tiempo para speech recognition
     }
   }, [audioRecorder.audioBlob, audioRecorder.isRecording, audioRecorder.duration, audioRecorder.audioUrl, isProcessing, transcript, startListening, playAIResponse]);
 
@@ -301,14 +326,6 @@ const useSpeechPractice = () => {
     if (recognitionRef.current) {
       recognitionRef.current.abort();
     }
-  }, [audioRecorder]);
-
-  const clearError = useCallback(() => {
-    setError(null);
-    audioRecorder.clearRecording();
-    setTranscript('');
-    setAiResponse(null);
-    processedAudioRef.current = null;
   }, [audioRecorder]);
 
   const playRecording = useCallback(() => {
@@ -337,7 +354,6 @@ const useSpeechPractice = () => {
     isAISpeaking,
     playAIResponse,
     error: error || audioRecorder.error,
-    clearError,
     clearSession
   };
 };
@@ -466,6 +482,7 @@ const EnglishPracticeApp = () => {
     }
   }, [speechPractice.feedback, speechPractice.aiResponse, currentQuestion, recordAnswer]);
 
+  // 🏠 PANTALLA HOME ORIGINAL
   const HomeScreen = () => {
     const safeProgress = {
       ...progress,
@@ -612,7 +629,6 @@ const EnglishPracticeApp = () => {
                 {message.content}
               </p>
               
-              {/* Controles de audio para preguntas */}
               {message.hasAudio && message.question && (
                 <div className="mt-2 flex items-center space-x-2">
                   <button 
@@ -626,7 +642,6 @@ const EnglishPracticeApp = () => {
                 </div>
               )}
               
-              {/* Controles de audio para respuestas del AI */}
               {message.hasAIAudio && message.audioText && (
                 <div className="mt-2 flex items-center space-x-2">
                   <button 
@@ -640,7 +655,6 @@ const EnglishPracticeApp = () => {
                 </div>
               )}
               
-              {/* Audio del usuario */}
               {message.type === 'user' && message.hasAudio && (
                 <div className="mt-2 flex items-center space-x-2">
                   <button 
@@ -658,7 +672,6 @@ const EnglishPracticeApp = () => {
                 </div>
               )}
               
-              {/* AI FEEDBACK */}
               {message.isAIResponse && (
                 <div className="mt-3 space-y-2">
                   <div className="flex items-center justify-between bg-white rounded-lg p-2">
@@ -694,7 +707,6 @@ const EnglishPracticeApp = () => {
                 </div>
               )}
               
-              {/* Follow-up questions */}
               {message.isFollowUp && (
                 <div className="mt-2 bg-gradient-to-r from-green-50 to-blue-50 p-2 rounded border border-green-200">
                   <p className="text-xs text-green-600 font-medium">🤔 Pregunta de seguimiento:</p>
@@ -712,7 +724,6 @@ const EnglishPracticeApp = () => {
           </div>
         ))}
         
-        {/* Estado de procesamiento */}
         {speechPractice.isProcessing && (
           <div className="flex items-start">
             <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center mr-2 text-white text-sm">
@@ -730,7 +741,6 @@ const EnglishPracticeApp = () => {
           </div>
         )}
         
-        {/* Estado del AI hablando */}
         {speechPractice.isAISpeaking && (
           <div className="flex items-start">
             <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center mr-2 text-white text-sm">
@@ -814,7 +824,6 @@ const EnglishPracticeApp = () => {
           </button>
         </div>
         
-        {/* Estados informativos */}
         {speechPractice.isRecording && (
           <div className="mt-2 text-center">
             <div className="flex items-center justify-center space-x-2">
@@ -852,6 +861,13 @@ const EnglishPracticeApp = () => {
           <div className="mt-2 bg-blue-50 p-2 rounded text-xs">
             <p className="text-blue-700 font-medium">Transcripción:</p>
             <p className="text-blue-600">{speechPractice.transcript}</p>
+          </div>
+        )}
+
+        {speechPractice.error && (
+          <div className="mt-2 bg-red-50 p-2 rounded text-xs">
+            <p className="text-red-700 font-medium">Error:</p>
+            <p className="text-red-600">{speechPractice.error}</p>
           </div>
         )}
       </div>
