@@ -1,17 +1,21 @@
-// src/EnglishPracticeApp.jsx - SUPER SIMPLE voice recognition
+// src/EnglishPracticeApp.jsx - With REAL AI Integration
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Home, Mic, BarChart3, Play, Volume2, RotateCcw, Square, Loader2, CheckCircle } from 'lucide-react';
+import { Home, Mic, BarChart3, Play, Volume2, RotateCcw, Square, Loader2, CheckCircle, Settings, Key, Eye, EyeOff } from 'lucide-react';
 
-// Solo usar los hooks/servicios más simples
+// Hooks y servicios
 import useProgress from './hooks/useProgress';
 import questionsService from './services/questionsService';
 
-// 🤖 AI Service super simple
-const simpleAI = {
-  async analyzeAndRespond(question, transcript) {
-    console.log('🤖 AI analyzing:', { question, transcript });
+// 🤖 REAL AI Service - El que funciona!
+const realAIService = {
+  async analyzeAndRespond(question, transcript, apiKey) {
+    console.log('🤖 REAL AI analyzing:', { question, transcript });
     
+    if (!apiKey) {
+      throw new Error('API Key is required');
+    }
+
     const cleanTranscript = transcript.trim();
     if (!cleanTranscript || cleanTranscript.length < 3) {
       return {
@@ -22,33 +26,78 @@ const simpleAI = {
       };
     }
 
-    const words = cleanTranscript.toLowerCase().split(/\s+/).filter(w => w.length > 0);
-    const wordCount = words.length;
-    
-    let score = 50;
-    if (wordCount >= 15) score = 95;
-    else if (wordCount >= 10) score = 85;
-    else if (wordCount >= 5) score = 65;
+    try {
+      const requestPayload = {
+        model: "anthropic/claude-3.5-sonnet",
+        messages: [
+          {
+            role: "system",
+            content: `You are an encouraging English conversation teacher. The student answered a question and you need to provide helpful feedback. Always respond in JSON format:
 
-    const encouragements = [
-      "Excellent work! Your English sounds very natural.",
-      "Great job! You're speaking clearly and confidently.", 
-      "Good effort! You're building confidence with each practice.",
-      "Nice try! Keep practicing to improve your fluency."
-    ];
-    
-    const level = score >= 85 ? 0 : score >= 70 ? 1 : score >= 55 ? 2 : 3;
-    
-    return {
-      encouragement: encouragements[level],
-      score,
-      suggestions: ['Try speaking longer', 'Add more details', 'Keep practicing!'],
-      audioText: encouragements[level]
-    };
+{
+  "encouragement": "positive message about their English",
+  "score": number between 1-100,
+  "suggestions": ["suggestion 1", "suggestion 2"],
+  "confidence": decimal 0-1,
+  "mood": "encouraging/supportive/enthusiastic",
+  "audioText": "what to say out loud",
+  "followUpQuestion": "a follow-up question"
+}`
+          },
+          {
+            role: "user", 
+            content: `Question: "${question}"
+Student Response: "${transcript}"
+
+Please evaluate and respond with encouraging feedback in JSON format.`
+          }
+        ],
+        max_tokens: 500,
+        temperature: 0.7
+      };
+
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': window.location.origin,
+          'X-Title': 'English Practice App'
+        },
+        body: JSON.stringify(requestPayload)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API Error ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      const aiContent = data.choices[0].message.content;
+
+      // Parse JSON response
+      let parsedResponse;
+      try {
+        parsedResponse = JSON.parse(aiContent);
+      } catch (parseError) {
+        const jsonMatch = aiContent.match(/\{.*\}/s);
+        if (jsonMatch) {
+          parsedResponse = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error(`No valid JSON found in AI response`);
+        }
+      }
+
+      return parsedResponse;
+
+    } catch (error) {
+      console.error('REAL AI Error:', error);
+      throw error;
+    }
   }
 };
 
-// 🎤 Hook SUPER SIMPLE para voice recording + recognition
+// 🎤 Hook de voice recording + recognition (original)
 const useSimpleVoice = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -160,21 +209,26 @@ const useSimpleVoice = () => {
     setIsRecording(false);
   }, [isRecording]);
 
-  // Process with AI
-  const processWithAI = useCallback(async (question) => {
+  // Process with REAL AI
+  const processWithAI = useCallback(async (question, apiKey) => {
     if (!transcript || transcript.trim().length === 0) {
       setError('No transcript available');
       return null;
     }
 
+    if (!apiKey) {
+      setError('API Key required for AI analysis');
+      return null;
+    }
+
     setIsProcessing(true);
-    console.log('🤖 Processing with AI:', { question, transcript });
+    console.log('🤖 Processing with REAL AI:', { question, transcript });
 
     try {
-      const result = await simpleAI.analyzeAndRespond(question, transcript);
-      console.log('✅ AI result:', result);
+      const result = await realAIService.analyzeAndRespond(question, transcript, apiKey);
+      console.log('✅ REAL AI result:', result);
       
-      // Speak the response
+      // Speak the response if available
       if ('speechSynthesis' in window && result.audioText) {
         const utterance = new SpeechSynthesisUtterance(result.audioText);
         utterance.rate = 0.9;
@@ -184,8 +238,8 @@ const useSimpleVoice = () => {
       
       return result;
     } catch (error) {
-      console.error('❌ AI processing error:', error);
-      setError('AI processing failed');
+      console.error('❌ REAL AI processing error:', error);
+      setError(`AI Error: ${error.message}`);
       return null;
     } finally {
       setIsProcessing(false);
@@ -216,6 +270,8 @@ const EnglishPracticeApp = () => {
   const [currentScreen, setCurrentScreen] = useState('home');
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [apiKey, setApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
   
   const voice = useSimpleVoice();
   const { progress, recordAnswer } = useProgress();
@@ -234,7 +290,7 @@ const EnglishPracticeApp = () => {
       {
         id: 1,
         type: 'bot',
-        content: "¡Hola! 👋 Vamos a practicar inglés con voice recognition simple.",
+        content: "¡Hola! 👋 Vamos a practicar inglés con AI real que puede conversar contigo.",
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       },
       {
@@ -257,10 +313,16 @@ const EnglishPracticeApp = () => {
       return;
     }
 
-    console.log('🎯 Processing voice response:', voice.transcript);
+    if (!apiKey.trim()) {
+      voice.reset();
+      alert('API Key is required for AI analysis. Please add it in the home screen.');
+      return;
+    }
+
+    console.log('🎯 Processing voice response with REAL AI:', voice.transcript);
 
     try {
-      const aiResult = await voice.processWithAI(currentQuestion.question);
+      const aiResult = await voice.processWithAI(currentQuestion.question, apiKey);
       
       if (aiResult) {
         // Add user message
@@ -279,7 +341,9 @@ const EnglishPracticeApp = () => {
           content: aiResult.encouragement,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           score: aiResult.score,
-          suggestions: aiResult.suggestions
+          suggestions: aiResult.suggestions,
+          followUpQuestion: aiResult.followUpQuestion,
+          mood: aiResult.mood
         };
 
         setMessages(prev => [...prev, userMessage, aiMessage]);
@@ -322,7 +386,7 @@ const EnglishPracticeApp = () => {
     }
   };
 
-  // 🏠 HOME SCREEN
+  // 🏠 HOME SCREEN con API Key
   const HomeScreen = () => {
     const safeProgress = {
       ...progress,
@@ -339,7 +403,7 @@ const EnglishPracticeApp = () => {
         <div className="max-w-md mx-auto">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-gray-800 mb-2">👋 ¡Hola!</h1>
-            <p className="text-gray-600">Voice Recognition Simple</p>
+            <p className="text-gray-600">Practica con AI real que conversa contigo</p>
             
             <div className="mt-4 bg-white rounded-lg p-4 shadow-sm">
               <p className="text-sm text-gray-600 mb-2">Progreso de Hoy</p>
@@ -357,14 +421,51 @@ const EnglishPracticeApp = () => {
             </div>
           </div>
 
+          {/* API Key Setup */}
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center mb-3">
+              <Key className="mr-2 text-yellow-600" size={20} />
+              <h3 className="font-semibold text-yellow-800">OpenRouter API Key</h3>
+            </div>
+            <div className="flex space-x-2">
+              <div className="flex-1 relative">
+                <input
+                  type={showApiKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-or-v1-..."
+                  className="w-full p-3 border border-gray-300 rounded-lg font-mono text-sm"
+                />
+                <button
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
+                >
+                  {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-yellow-700 mt-2">
+              💡 Get free API key: <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="underline">openrouter.ai/keys</a>
+            </p>
+            {apiKey && (
+              <div className="mt-2 flex items-center text-green-700">
+                <CheckCircle size={16} className="mr-1" />
+                <span className="text-xs">API Key configured ✓</span>
+              </div>
+            )}
+          </div>
+
           <div className="space-y-4">
             <button 
               onClick={() => setCurrentScreen('speaking')}
-              className="w-full bg-blue-500 hover:bg-blue-600 text-white p-6 rounded-xl shadow-lg transition-all transform hover:scale-105"
+              disabled={!apiKey.trim()}
+              className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white p-6 rounded-xl shadow-lg transition-all transform hover:scale-105 disabled:hover:scale-100"
             >
               <Mic className="mx-auto mb-2" size={32} />
-              <span className="text-xl font-semibold">🎤 Voice Practice</span>
-              <p className="text-sm text-blue-100 mt-1">Simple Voice Recognition</p>
+              <span className="text-xl font-semibold">🤖 Conversar con AI Real</span>
+              <p className="text-sm text-blue-100 mt-1">
+                {apiKey ? 'Análisis completo + respuestas inteligentes' : 'Requiere API Key'}
+              </p>
             </button>
 
             <button 
@@ -377,19 +478,19 @@ const EnglishPracticeApp = () => {
           </div>
 
           <div className="mt-6 bg-white rounded-lg p-4 shadow-sm">
-            <p className="text-xs font-medium text-gray-600 mb-2">🎤 Voice Recognition:</p>
+            <p className="text-xs font-medium text-gray-600 mb-2">🤖 AI Real Activo:</p>
             <div className="flex items-center justify-center space-x-4 text-xs">
               <div className="flex items-center">
-                <div className="w-2 h-2 rounded-full mr-2 bg-green-500"></div>
-                Mic ✓
+                <div className={`w-2 h-2 rounded-full mr-2 ${apiKey ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                API {apiKey ? '✓' : '✗'}
               </div>
               <div className="flex items-center">
                 <div className="w-2 h-2 rounded-full mr-2 bg-blue-500"></div>
-                Speech API ✓
+                Voice Recognition ✓
               </div>
               <div className="flex items-center">
                 <div className="w-2 h-2 rounded-full mr-2 bg-purple-500"></div>
-                TTS ✓
+                Audio Response ✓
               </div>
             </div>
           </div>
@@ -398,7 +499,7 @@ const EnglishPracticeApp = () => {
     );
   };
 
-  // 🎙️ SPEAKING SCREEN
+  // 🎙️ SPEAKING SCREEN (mejorado con AI real)
   const SpeakingScreen = () => (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       {/* Header */}
@@ -413,14 +514,14 @@ const EnglishPracticeApp = () => {
             </button>
             <div className="flex items-center">
               <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center mr-3">
-                🎤
+                🤖
               </div>
               <div>
-                <h2 className="font-semibold">Voice Practice</h2>
+                <h2 className="font-semibold">Conversación con AI Real</h2>
                 <p className="text-sm text-blue-200">
                   {voice.isRecording ? `Grabando... (${voice.duration}s)` : 
-                   voice.isProcessing ? 'Procesando...' : 
-                   'Listo para hablar'}
+                   voice.isProcessing ? 'AI Real Analizando...' : 
+                   'Listo para conversación'}
                 </p>
               </div>
             </div>
@@ -477,7 +578,7 @@ const EnglishPracticeApp = () => {
                     <div className="flex items-center">
                       <CheckCircle size={16} className="text-green-500 mr-2" />
                       <span className="text-sm font-medium text-gray-700">
-                        Score: {message.score}/100
+                        AI Real: {message.score}/100
                       </span>
                     </div>
                     <div className={`px-2 py-1 rounded text-xs font-medium ${
@@ -492,7 +593,7 @@ const EnglishPracticeApp = () => {
                   
                   {message.suggestions && (
                     <div className="bg-white bg-opacity-80 p-2 rounded text-xs">
-                      <p className="font-medium text-gray-700 mb-1">💡 Sugerencias:</p>
+                      <p className="font-medium text-gray-700 mb-1">💡 Sugerencias del AI:</p>
                       <ul className="space-y-1">
                         {message.suggestions.slice(0, 2).map((suggestion, index) => (
                           <li key={index} className="flex items-start">
@@ -501,6 +602,13 @@ const EnglishPracticeApp = () => {
                           </li>
                         ))}
                       </ul>
+                    </div>
+                  )}
+
+                  {message.followUpQuestion && (
+                    <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-2 rounded border border-blue-200">
+                      <p className="text-xs text-blue-600 font-medium">🤔 Pregunta del AI:</p>
+                      <p className="text-xs text-blue-700">{message.followUpQuestion}</p>
                     </div>
                   )}
                 </div>
@@ -525,7 +633,7 @@ const EnglishPracticeApp = () => {
             <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg rounded-tl-none p-3 shadow-sm border border-blue-200">
               <div className="flex items-center space-x-2">
                 <Loader2 size={16} className="animate-spin text-blue-600" />
-                <span className="text-gray-700">IA procesando...</span>
+                <span className="text-gray-700">AI real analizando tu respuesta...</span>
               </div>
             </div>
           </div>
@@ -555,7 +663,7 @@ const EnglishPracticeApp = () => {
             
             <button 
               onClick={voice.isRecording ? voice.stopRecording : voice.startRecording}
-              disabled={voice.isProcessing}
+              disabled={voice.isProcessing || !apiKey}
               className={`p-3 rounded-full flex-1 flex items-center justify-center space-x-2 transition-colors disabled:opacity-50 ${
                 voice.isRecording 
                   ? 'bg-red-500 hover:bg-red-600 text-white' 
@@ -570,19 +678,24 @@ const EnglishPracticeApp = () => {
               ) : voice.isProcessing ? (
                 <>
                   <Loader2 size={20} className="animate-spin" />
-                  <span>Procesando...</span>
+                  <span>AI Real Procesando...</span>
+                </>
+              ) : !apiKey ? (
+                <>
+                  <Settings size={20} />
+                  <span>API Key Requerida</span>
                 </>
               ) : (
                 <>
                   <Mic size={20} />
-                  <span>🎤 Hablar</span>
+                  <span>🎤 Hablar con AI Real</span>
                 </>
               )}
             </button>
             
             <button 
               onClick={handleVoiceComplete}
-              disabled={!voice.transcript || voice.isRecording || voice.isProcessing}
+              disabled={!voice.transcript || voice.isRecording || voice.isProcessing || !apiKey}
               className="bg-green-500 hover:bg-green-600 disabled:opacity-50 disabled:bg-gray-300 text-white p-3 rounded-full"
             >
               <CheckCircle size={20} />
@@ -598,6 +711,10 @@ const EnglishPracticeApp = () => {
             )}
             
             <div className="flex items-center justify-center space-x-4">
+              <div className="flex items-center">
+                <div className={`w-2 h-2 rounded-full mr-2 ${apiKey ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                <span className="text-gray-600">AI Real</span>
+              </div>
               <div className="flex items-center">
                 <div className={`w-2 h-2 rounded-full mr-2 ${voice.isRecording ? 'bg-red-500 animate-pulse' : 'bg-gray-300'}`}></div>
                 <span className="text-gray-600">Recording</span>
@@ -617,7 +734,7 @@ const EnglishPracticeApp = () => {
     </div>
   );
 
-  // 📊 PROGRESS SCREEN
+  // 📊 PROGRESS SCREEN (original)
   const ProgressScreen = () => {
     const safeProgress = {
       ...progress,
@@ -641,15 +758,39 @@ const EnglishPracticeApp = () => {
           
           <div className="space-y-4">
             <div className="bg-white rounded-xl p-6 shadow-lg">
-              <h3 className="text-lg font-semibold mb-4 text-center">Estadísticas</h3>
+              <h3 className="text-lg font-semibold mb-4 text-center">Estadísticas con AI Real</h3>
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-blue-50 p-3 rounded-lg text-center">
                   <p className="text-2xl font-bold text-blue-600">{safeProgress.todayProgress}</p>
-                  <p className="text-sm text-gray-600">Conversaciones</p>
+                  <p className="text-sm text-gray-600">Conversaciones IA</p>
                 </div>
                 <div className="bg-green-50 p-3 rounded-lg text-center">
                   <p className="text-2xl font-bold text-green-600">{safeProgress.currentStreak}</p>
                   <p className="text-sm text-gray-600">Días Seguidos</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-6 shadow-lg border border-blue-200">
+              <h3 className="text-lg font-semibold mb-3 text-gray-800">🤖 AI Real Activo</h3>
+              <div className="space-y-2">
+                <div className="flex items-center text-sm">
+                  <div className={`w-2 h-2 rounded-full mr-3 ${apiKey ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                  <span className="text-gray-700">
+                    OpenRouter API {apiKey ? 'configurado' : 'requerido'}
+                  </span>
+                </div>
+                <div className="flex items-center text-sm">
+                  <div className="w-2 h-2 rounded-full bg-blue-500 mr-3"></div>
+                  <span className="text-gray-700">Análisis inteligente de conversaciones</span>
+                </div>
+                <div className="flex items-center text-sm">
+                  <div className="w-2 h-2 rounded-full bg-purple-500 mr-3"></div>
+                  <span className="text-gray-700">Respuestas personalizadas</span>
+                </div>
+                <div className="flex items-center text-sm">
+                  <div className="w-2 h-2 rounded-full bg-orange-500 mr-3"></div>
+                  <span className="text-gray-700">Audio feedback automático</span>
                 </div>
               </div>
             </div>
