@@ -1,13 +1,13 @@
-// src/EnglishPracticeApp.jsx - With REAL AI Integration
+// src/EnglishPracticeApp.jsx - ESTRUCTURA CORREGIDA
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Home, Mic, BarChart3, Play, Volume2, RotateCcw, Square, Loader2, CheckCircle, Settings, Key, Eye, EyeOff } from 'lucide-react';
+import { Home, Mic, Headphones, BarChart3, Play, Volume2, RotateCcw, Square, Loader2, CheckCircle } from 'lucide-react';
 
 // Hooks y servicios
 import useProgress from './hooks/useProgress';
 import questionsService from './services/questionsService';
 
-// 🤖 REAL AI Service - El que funciona!
+// 🤖 REAL AI Service - OpenRouter Integration
 const realAIService = {
   async analyzeAndRespond(question, transcript, apiKey) {
     console.log('🤖 REAL AI analyzing:', { question, transcript });
@@ -97,7 +97,7 @@ Please evaluate and respond with encouraging feedback in JSON format.`
   }
 };
 
-// 🎤 Hook de voice recording + recognition (original)
+// 🎤 Hook de voice recording + recognition
 const useSimpleVoice = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -266,12 +266,14 @@ const useSimpleVoice = () => {
   };
 };
 
+// 🚨 IMPORTANTE: El componente principal DEBE estar aquí
 const EnglishPracticeApp = () => {
+  // 🔐 HOOKS DENTRO DEL COMPONENTE
   const [currentScreen, setCurrentScreen] = useState('home');
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [apiKey, setApiKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
+  // 🔐 TU API KEY CONFIGURADA CORRECTAMENTE
+  const [apiKey] = useState('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');
   
   const voice = useSimpleVoice();
   const { progress, recordAnswer } = useProgress();
@@ -310,12 +312,6 @@ const EnglishPracticeApp = () => {
   const handleVoiceComplete = async () => {
     if (!voice.transcript || voice.transcript.trim().length === 0) {
       console.warn('⚠️ No transcript available');
-      return;
-    }
-
-    if (!apiKey.trim()) {
-      voice.reset();
-      alert('API Key is required for AI analysis. Please add it in the home screen.');
       return;
     }
 
@@ -386,7 +382,7 @@ const EnglishPracticeApp = () => {
     }
   };
 
-  // 🏠 HOME SCREEN con API Key
+  // 🏠 HOME SCREEN
   const HomeScreen = () => {
     const safeProgress = {
       ...progress,
@@ -421,51 +417,23 @@ const EnglishPracticeApp = () => {
             </div>
           </div>
 
-          {/* API Key Setup */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-            <div className="flex items-center mb-3">
-              <Key className="mr-2 text-yellow-600" size={20} />
-              <h3 className="font-semibold text-yellow-800">OpenRouter API Key</h3>
-            </div>
-            <div className="flex space-x-2">
-              <div className="flex-1 relative">
-                <input
-                  type={showApiKey ? "text" : "password"}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-or-v1-..."
-                  className="w-full p-3 border border-gray-300 rounded-lg font-mono text-sm"
-                />
-                <button
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
-                >
-                  {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-            </div>
-            <p className="text-xs text-yellow-700 mt-2">
-              💡 Get free API key: <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="underline">openrouter.ai/keys</a>
-            </p>
-            {apiKey && (
-              <div className="mt-2 flex items-center text-green-700">
-                <CheckCircle size={16} className="mr-1" />
-                <span className="text-xs">API Key configured ✓</span>
-              </div>
-            )}
-          </div>
-
           <div className="space-y-4">
             <button 
               onClick={() => setCurrentScreen('speaking')}
-              disabled={!apiKey.trim()}
-              className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white p-6 rounded-xl shadow-lg transition-all transform hover:scale-105 disabled:hover:scale-100"
+              className="w-full bg-blue-500 hover:bg-blue-600 text-white p-6 rounded-xl shadow-lg transition-all transform hover:scale-105"
             >
               <Mic className="mx-auto mb-2" size={32} />
-              <span className="text-xl font-semibold">🤖 Conversar con AI Real</span>
-              <p className="text-sm text-blue-100 mt-1">
-                {apiKey ? 'Análisis completo + respuestas inteligentes' : 'Requiere API Key'}
-              </p>
+              <span className="text-xl font-semibold">🤖 Conversación con IA</span>
+              <p className="text-sm text-blue-100 mt-1">Análisis completo + respuestas inteligentes</p>
+            </button>
+
+            <button 
+              onClick={() => setCurrentScreen('listening')}
+              className="w-full bg-green-500 hover:bg-green-600 text-white p-6 rounded-xl shadow-lg transition-all transform hover:scale-105"
+            >
+              <Headphones className="mx-auto mb-2" size={32} />
+              <span className="text-xl font-semibold">🎧 Escuchar y Repetir</span>
+              <p className="text-sm text-green-100 mt-1">Práctica de pronunciación</p>
             </button>
 
             <button 
@@ -474,6 +442,7 @@ const EnglishPracticeApp = () => {
             >
               <BarChart3 className="mx-auto mb-2" size={32} />
               <span className="text-xl font-semibold">📊 Mi Progreso</span>
+              <p className="text-sm text-purple-100 mt-1">Estadísticas y logros</p>
             </button>
           </div>
 
@@ -481,16 +450,16 @@ const EnglishPracticeApp = () => {
             <p className="text-xs font-medium text-gray-600 mb-2">🤖 AI Real Activo:</p>
             <div className="flex items-center justify-center space-x-4 text-xs">
               <div className="flex items-center">
-                <div className={`w-2 h-2 rounded-full mr-2 ${apiKey ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                API {apiKey ? '✓' : '✗'}
+                <div className="w-2 h-2 rounded-full mr-2 bg-green-500"></div>
+                Análisis ✓
               </div>
               <div className="flex items-center">
                 <div className="w-2 h-2 rounded-full mr-2 bg-blue-500"></div>
-                Voice Recognition ✓
+                Respuestas ✓
               </div>
               <div className="flex items-center">
                 <div className="w-2 h-2 rounded-full mr-2 bg-purple-500"></div>
-                Audio Response ✓
+                Audio ✓
               </div>
             </div>
           </div>
@@ -499,7 +468,7 @@ const EnglishPracticeApp = () => {
     );
   };
 
-  // 🎙️ SPEAKING SCREEN (mejorado con AI real)
+  // 🎙️ SPEAKING SCREEN
   const SpeakingScreen = () => (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       {/* Header */}
@@ -663,7 +632,7 @@ const EnglishPracticeApp = () => {
             
             <button 
               onClick={voice.isRecording ? voice.stopRecording : voice.startRecording}
-              disabled={voice.isProcessing || !apiKey}
+              disabled={voice.isProcessing}
               className={`p-3 rounded-full flex-1 flex items-center justify-center space-x-2 transition-colors disabled:opacity-50 ${
                 voice.isRecording 
                   ? 'bg-red-500 hover:bg-red-600 text-white' 
@@ -680,11 +649,6 @@ const EnglishPracticeApp = () => {
                   <Loader2 size={20} className="animate-spin" />
                   <span>AI Real Procesando...</span>
                 </>
-              ) : !apiKey ? (
-                <>
-                  <Settings size={20} />
-                  <span>API Key Requerida</span>
-                </>
               ) : (
                 <>
                   <Mic size={20} />
@@ -695,7 +659,7 @@ const EnglishPracticeApp = () => {
             
             <button 
               onClick={handleVoiceComplete}
-              disabled={!voice.transcript || voice.isRecording || voice.isProcessing || !apiKey}
+              disabled={!voice.transcript || voice.isRecording || voice.isProcessing}
               className="bg-green-500 hover:bg-green-600 disabled:opacity-50 disabled:bg-gray-300 text-white p-3 rounded-full"
             >
               <CheckCircle size={20} />
@@ -712,7 +676,7 @@ const EnglishPracticeApp = () => {
             
             <div className="flex items-center justify-center space-x-4">
               <div className="flex items-center">
-                <div className={`w-2 h-2 rounded-full mr-2 ${apiKey ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                <div className="w-2 h-2 rounded-full mr-2 bg-green-500"></div>
                 <span className="text-gray-600">AI Real</span>
               </div>
               <div className="flex items-center">
@@ -734,7 +698,34 @@ const EnglishPracticeApp = () => {
     </div>
   );
 
-  // 📊 PROGRESS SCREEN (original)
+  // 🎧 LISTENING SCREEN
+  const ListeningScreen = () => (
+    <div className="min-h-screen bg-green-50 p-6">
+      <div className="max-w-md mx-auto">
+        <div className="flex items-center mb-6">
+          <button onClick={() => setCurrentScreen('home')} className="p-2 rounded-lg bg-white shadow-md">
+            <Home size={20} />
+          </button>
+          <h2 className="text-2xl font-bold text-gray-800 ml-4">🎧 Escuchar y Repetir</h2>
+        </div>
+        <div className="bg-white rounded-xl p-6 shadow-lg text-center">
+          <div className="text-6xl mb-4">🚧</div>
+          <h3 className="text-xl font-semibold text-gray-800 mb-3">Próximamente</h3>
+          <p className="text-gray-600 mb-4">
+            Esta sección estará disponible pronto con ejercicios de escucha y pronunciación.
+          </p>
+          <button 
+            onClick={() => setCurrentScreen('speaking')}
+            className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg transition-colors"
+          >
+            🤖 Probar AI Conversacional
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // 📊 PROGRESS SCREEN
   const ProgressScreen = () => {
     const safeProgress = {
       ...progress,
@@ -775,22 +766,20 @@ const EnglishPracticeApp = () => {
               <h3 className="text-lg font-semibold mb-3 text-gray-800">🤖 AI Real Activo</h3>
               <div className="space-y-2">
                 <div className="flex items-center text-sm">
-                  <div className={`w-2 h-2 rounded-full mr-3 ${apiKey ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                  <span className="text-gray-700">
-                    OpenRouter API {apiKey ? 'configurado' : 'requerido'}
-                  </span>
-                </div>
-                <div className="flex items-center text-sm">
-                  <div className="w-2 h-2 rounded-full bg-blue-500 mr-3"></div>
+                  <div className="w-2 h-2 rounded-full bg-green-500 mr-3"></div>
                   <span className="text-gray-700">Análisis inteligente de conversaciones</span>
                 </div>
                 <div className="flex items-center text-sm">
-                  <div className="w-2 h-2 rounded-full bg-purple-500 mr-3"></div>
+                  <div className="w-2 h-2 rounded-full bg-blue-500 mr-3"></div>
                   <span className="text-gray-700">Respuestas personalizadas</span>
                 </div>
                 <div className="flex items-center text-sm">
-                  <div className="w-2 h-2 rounded-full bg-orange-500 mr-3"></div>
+                  <div className="w-2 h-2 rounded-full bg-purple-500 mr-3"></div>
                   <span className="text-gray-700">Audio feedback automático</span>
+                </div>
+                <div className="flex items-center text-sm">
+                  <div className="w-2 h-2 rounded-full bg-orange-500 mr-3"></div>
+                  <span className="text-gray-700">OpenRouter AI configurado</span>
                 </div>
               </div>
             </div>
@@ -805,6 +794,7 @@ const EnglishPracticeApp = () => {
     switch(currentScreen) {
       case 'home': return <HomeScreen />;
       case 'speaking': return <SpeakingScreen />;
+      case 'listening': return <ListeningScreen />;
       case 'progress': return <ProgressScreen />;
       default: return <HomeScreen />;
     }
@@ -813,4 +803,5 @@ const EnglishPracticeApp = () => {
   return renderScreen();
 };
 
+// 🚨 EXPORT AQUÍ - FUERA DEL COMPONENTE
 export default EnglishPracticeApp;
