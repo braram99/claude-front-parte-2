@@ -1,7 +1,7 @@
-// src/EnglishPracticeApp.jsx - FIXED VERSION CON API KEY CORRECTA
+// src/EnglishPracticeApp.jsx - VERSIÓN CORREGIDA COMPLETA CON FIREBASE
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Home, Mic, Headphones, BarChart3, Play, Volume2, RotateCcw, Square, Loader2, CheckCircle, AlertTriangle, Settings } from 'lucide-react';
+import { Home, Mic, Headphones, BarChart3, Play, Volume2, RotateCcw, Square, Loader2, CheckCircle, AlertTriangle, Settings, Database, User, Wifi, WifiOff } from 'lucide-react';
 
 // Hooks y servicios
 import useProgress from './hooks/useProgress';
@@ -9,31 +9,27 @@ import questionsService from './services/questionsService';
 
 // 🔐 CONFIGURACIÓN SEGURA DE API KEY
 const getApiKey = () => {
-  // 1. Intentar desde variables de entorno (RECOMENDADO)
   const envKey = import.meta.env.VITE_OPENROUTER_API_KEY;
   if (envKey && envKey !== 'tu-api-key-real-aqui') {
     console.log('✅ Using API key from environment variables');
     return envKey;
   }
   
-  // 2. Fallback desde localStorage (para testing)
   const localKey = localStorage.getItem('openrouter_api_key');
   if (localKey) {
     console.log('✅ Using API key from localStorage');
     return localKey;
   }
   
-  // 3. No hay API key válida
   console.warn('⚠️ No valid API key found');
   return null;
 };
 
-// 🤖 REAL AI Service - MEJORADO con manejo de errores
+// 🤖 REAL AI Service
 const realAIService = {
   async analyzeAndRespond(question, transcript, apiKey) {
     console.log('🤖 REAL AI analyzing:', { question, transcript, hasApiKey: !!apiKey });
     
-    // Validaciones iniciales
     if (!apiKey) {
       throw new Error('API_KEY_MISSING');
     }
@@ -73,8 +69,6 @@ Please evaluate and respond with encouraging feedback in JSON format.`
         temperature: 0.7
       };
 
-      console.log('📤 Sending request to OpenRouter...');
-
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -86,39 +80,23 @@ Please evaluate and respond with encouraging feedback in JSON format.`
         body: JSON.stringify(requestPayload)
       });
 
-      console.log('📥 OpenRouter response status:', response.status);
-
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ OpenRouter API Error:', {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorText
-        });
-        
-        // Errores específicos
         if (response.status === 401) {
           throw new Error('API_KEY_INVALID');
         } else if (response.status === 429) {
           throw new Error('RATE_LIMIT_EXCEEDED');
-        } else if (response.status >= 500) {
-          throw new Error('SERVER_ERROR');
         } else {
-          throw new Error(`API_ERROR_${response.status}`);
+          throw new Error('SERVER_ERROR');
         }
       }
 
       const data = await response.json();
-      console.log('✅ OpenRouter response received:', data);
-
       const aiContent = data.choices[0].message.content;
 
-      // Parse JSON response
       let parsedResponse;
       try {
         parsedResponse = JSON.parse(aiContent);
       } catch (parseError) {
-        console.warn('⚠️ JSON parse failed, trying to extract...');
         const jsonMatch = aiContent.match(/\{.*\}/s);
         if (jsonMatch) {
           parsedResponse = JSON.parse(jsonMatch[0]);
@@ -127,7 +105,6 @@ Please evaluate and respond with encouraging feedback in JSON format.`
         }
       }
 
-      console.log('✅ Parsed AI response:', parsedResponse);
       return parsedResponse;
 
     } catch (error) {
@@ -136,7 +113,6 @@ Please evaluate and respond with encouraging feedback in JSON format.`
     }
   },
 
-  // 🔄 Respuestas de fallback para errores
   getFallbackResponse(errorType) {
     const fallbacks = {
       'EMPTY_TRANSCRIPT': {
@@ -151,38 +127,11 @@ Please evaluate and respond with encouraging feedback in JSON format.`
       'API_KEY_MISSING': {
         encouragement: "No API key configured. Using practice mode.",
         score: 60,
-        suggestions: ['Configure your OpenRouter API key', 'Check environment variables'],
+        suggestions: ['Configure your OpenRouter API key'],
         confidence: 0.5,
         mood: 'supportive',
         audioText: "API key needed for full AI analysis. This is practice mode.",
         followUpQuestion: "Would you like to continue practicing?"
-      },
-      'API_KEY_INVALID': {
-        encouragement: "API key invalid. Using practice mode.",
-        score: 60,
-        suggestions: ['Check your API key', 'Verify OpenRouter account'],
-        confidence: 0.5,
-        mood: 'supportive',
-        audioText: "API key needs verification. Continuing in practice mode.",
-        followUpQuestion: "Let's continue practicing anyway!"
-      },
-      'RATE_LIMIT_EXCEEDED': {
-        encouragement: "Rate limit reached. You're practicing a lot today!",
-        score: 70,
-        suggestions: ['Take a short break', 'Try again in a few minutes'],
-        confidence: 0.6,
-        mood: 'encouraging',
-        audioText: "You've been practicing a lot! Take a quick break.",
-        followUpQuestion: "Ready to continue after a short break?"
-      },
-      'SERVER_ERROR': {
-        encouragement: "Server temporarily unavailable. Your practice continues!",
-        score: 65,
-        suggestions: ['Try again later', 'Continue practicing'],
-        confidence: 0.5,
-        mood: 'supportive',
-        audioText: "Technical issue, but your practice is valuable!",
-        followUpQuestion: "Let's keep practicing anyway!"
       }
     };
 
@@ -190,7 +139,7 @@ Please evaluate and respond with encouraging feedback in JSON format.`
   }
 };
 
-// 🎤 Hook de voice recording + recognition MEJORADO
+// 🎤 Hook de voice recording + recognition
 const useSimpleVoice = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -204,52 +153,34 @@ const useSimpleVoice = () => {
   const timerRef = useRef(null);
   const startTimeRef = useRef(0);
 
-  // 🔍 Verificar API key al inicializar
   useEffect(() => {
     const apiKey = getApiKey();
-    if (apiKey) {
-      setApiKeyStatus('valid');
-      console.log('✅ API key detected');
-    } else {
-      setApiKeyStatus('missing');
-      console.warn('⚠️ No API key found - will use fallback mode');
-    }
+    setApiKeyStatus(apiKey ? 'valid' : 'missing');
   }, []);
 
-  // Start recording + recognition
   const startRecording = useCallback(async () => {
     try {
       setError(null);
       setTranscript('');
-      console.log('🎙️ Starting recording + recognition...');
 
-      // 1. Get microphone
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      // 2. Start recording
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       
-      const chunks = [];
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunks.push(event.data);
-      };
-      
+      mediaRecorder.ondataavailable = () => {};
       mediaRecorder.onstop = () => {
         stream.getTracks().forEach(track => track.stop());
-        console.log('🎙️ Recording stopped');
       };
       
       mediaRecorder.start();
       setIsRecording(true);
       startTimeRef.current = Date.now();
       
-      // 3. Start timer
       timerRef.current = setInterval(() => {
         setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
       }, 1000);
 
-      // 4. Start speech recognition
       if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         const recognition = new SpeechRecognition();
@@ -274,31 +205,21 @@ const useSimpleVoice = () => {
           }
           
           setTranscript(finalTranscript + interimTranscript);
-          console.log('📝 Current transcript:', finalTranscript + interimTranscript);
         };
 
         recognition.onerror = (event) => {
-          console.error('🚨 Speech recognition error:', event.error);
           setError(`Speech error: ${event.error}`);
         };
 
         recognition.start();
-        console.log('🎤 Speech recognition started');
-      } else {
-        console.warn('⚠️ Speech recognition not supported');
-        setError('Speech recognition not supported in this browser');
       }
 
     } catch (err) {
-      console.error('❌ Recording error:', err);
       setError('Could not access microphone');
     }
   }, []);
 
-  // Stop recording + recognition
   const stopRecording = useCallback(() => {
-    console.log('🛑 Stopping recording + recognition...');
-    
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
     }
@@ -315,7 +236,6 @@ const useSimpleVoice = () => {
     setIsRecording(false);
   }, [isRecording]);
 
-  // Process with REAL AI o fallback
   const processWithAI = useCallback(async (question) => {
     if (!transcript || transcript.trim().length === 0) {
       setError('No transcript available');
@@ -323,26 +243,19 @@ const useSimpleVoice = () => {
     }
 
     setIsProcessing(true);
-    console.log('🤖 Processing with AI:', { question, transcript, apiKeyStatus });
 
     try {
       const apiKey = getApiKey();
       
       if (!apiKey) {
-        console.log('📝 No API key - using fallback mode');
         const fallbackResult = realAIService.getFallbackResponse('API_KEY_MISSING');
-        
-        // Añadir variación al score para simular análisis
         const words = transcript.trim().split(' ').length;
         fallbackResult.score = Math.min(90, 40 + (words * 8) + Math.round(Math.random() * 20));
-        
         return fallbackResult;
       }
 
       const result = await realAIService.analyzeAndRespond(question, transcript, apiKey);
-      console.log('✅ AI result:', result);
       
-      // Speak the response if available
       if ('speechSynthesis' in window && result.audioText) {
         const utterance = new SpeechSynthesisUtterance(result.audioText);
         utterance.rate = 0.9;
@@ -353,23 +266,9 @@ const useSimpleVoice = () => {
       return result;
       
     } catch (error) {
-      console.error('❌ AI processing error:', error);
-      
-      // Manejo específico de errores
-      let fallbackResult;
-      if (error.message.includes('API_KEY_INVALID')) {
-        fallbackResult = realAIService.getFallbackResponse('API_KEY_INVALID');
-        setApiKeyStatus('invalid');
-      } else if (error.message.includes('RATE_LIMIT')) {
-        fallbackResult = realAIService.getFallbackResponse('RATE_LIMIT_EXCEEDED');
-      } else {
-        fallbackResult = realAIService.getFallbackResponse('SERVER_ERROR');
-      }
-      
-      // Mantener un score razonable basado en el transcript
+      const fallbackResult = realAIService.getFallbackResponse('SERVER_ERROR');
       const words = transcript.trim().split(' ').length;
       fallbackResult.score = Math.min(90, 40 + (words * 8) + Math.round(Math.random() * 20));
-      
       return fallbackResult;
     } finally {
       setIsProcessing(false);
@@ -397,7 +296,7 @@ const useSimpleVoice = () => {
   };
 };
 
-// 🚨 COMPONENTE DE CONFIGURACIÓN DE API KEY
+// 🚨 Componente de configuración de API Key
 const ApiKeyConfig = ({ onClose }) => {
   const [tempKey, setTempKey] = useState('');
   const [testing, setTesting] = useState(false);
@@ -406,10 +305,9 @@ const ApiKeyConfig = ({ onClose }) => {
   const handleSave = () => {
     if (tempKey.trim()) {
       localStorage.setItem('openrouter_api_key', tempKey.trim());
-      console.log('✅ API key saved to localStorage');
       setTestResult({ success: true, message: 'API key saved successfully!' });
       setTimeout(() => {
-        window.location.reload(); // Recargar para aplicar cambios
+        window.location.reload();
       }, 1500);
     }
   };
@@ -422,11 +320,7 @@ const ApiKeyConfig = ({ onClose }) => {
 
     setTesting(true);
     try {
-      const testResult = await realAIService.analyzeAndRespond(
-        "Test question", 
-        "This is a test", 
-        tempKey.trim()
-      );
+      await realAIService.analyzeAndRespond("Test question", "This is a test", tempKey.trim());
       setTestResult({ success: true, message: 'API key works! ✅' });
     } catch (error) {
       setTestResult({ 
@@ -443,9 +337,7 @@ const ApiKeyConfig = ({ onClose }) => {
       <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-800">🔐 Configure OpenRouter API</h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-            ✕
-          </button>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
         </div>
         
         <div className="space-y-4">
@@ -489,28 +381,19 @@ const ApiKeyConfig = ({ onClose }) => {
               💾 Save API Key
             </button>
           </div>
-          
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <p className="text-sm text-blue-800 mb-2">
-              <strong>📋 Cómo obtener tu API Key:</strong>
-            </p>
-            <ol className="text-xs text-blue-700 space-y-1">
-              <li>1. Ve a <a href="https://openrouter.ai/" target="_blank" className="underline">openrouter.ai</a></li>
-              <li>2. Crea una cuenta gratuita</li>
-              <li>3. Ve a "Keys" en tu dashboard</li>
-              <li>4. Crea una nueva API key</li>
-              <li>5. Copia y pega aquí</li>
-            </ol>
-          </div>
         </div>
       </div>
     </div>
   );
 };
 
-// 🚨 IMPORTANTE: El componente principal DEBE estar aquí
-const EnglishPracticeApp = () => {
-  // 🔐 HOOKS DENTRO DEL COMPONENTE
+// 🚨 COMPONENTE PRINCIPAL CON FIREBASE
+const EnglishPracticeApp = ({ 
+  firebaseUser, 
+  firebaseConnectionStatus, 
+  onPracticeComplete,
+  firebaseStats 
+}) => {
   const [currentScreen, setCurrentScreen] = useState('home');
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -519,7 +402,6 @@ const EnglishPracticeApp = () => {
   const voice = useSimpleVoice();
   const { progress, recordAnswer } = useProgress();
 
-  // Initialize question
   useEffect(() => {
     if (!currentQuestion) {
       const question = questionsService.getNextQuestion();
@@ -529,15 +411,17 @@ const EnglishPracticeApp = () => {
   }, [currentQuestion]);
 
   const initializeChat = (question) => {
-    const apiStatus = voice.apiKeyStatus === 'valid' ? 'AI real activo' : 'Modo práctica (sin API key)';
+    const apiStatus = voice.apiKeyStatus === 'valid' ? 'AI real activo' : 'Modo práctica';
+    const firebaseStatus = firebaseConnectionStatus === 'connected' ? '+ Firebase activo' : '+ Local storage';
     
     const welcomeMessages = [
       {
         id: 1,
         type: 'bot',
-        content: `¡Hola! 👋 ${apiStatus}. Vamos a practicar inglés conversacional.`,
+        content: `¡Hola! 👋 ${apiStatus} ${firebaseStatus}. Vamos a practicar inglés conversacional.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        apiStatus: voice.apiKeyStatus
+        apiStatus: voice.apiKeyStatus,
+        firebaseStatus: firebaseConnectionStatus
       },
       {
         id: 2,
@@ -552,20 +436,16 @@ const EnglishPracticeApp = () => {
     setMessages(welcomeMessages);
   };
 
-  // Handle voice processing
   const handleVoiceComplete = async () => {
     if (!voice.transcript || voice.transcript.trim().length === 0) {
       console.warn('⚠️ No transcript available');
       return;
     }
 
-    console.log('🎯 Processing voice response:', voice.transcript);
-
     try {
       const aiResult = await voice.processWithAI(currentQuestion.question);
       
       if (aiResult) {
-        // Add user message
         const userMessage = {
           id: Date.now(),
           type: 'user',
@@ -574,7 +454,6 @@ const EnglishPracticeApp = () => {
           duration: voice.duration
         };
 
-        // Add AI response
         const aiMessage = {
           id: Date.now() + 1,
           type: 'ai',
@@ -584,12 +463,50 @@ const EnglishPracticeApp = () => {
           suggestions: aiResult.suggestions,
           followUpQuestion: aiResult.followUpQuestion,
           mood: aiResult.mood,
-          apiKeyStatus: voice.apiKeyStatus
+          apiKeyStatus: voice.apiKeyStatus,
+          firebaseStatus: firebaseConnectionStatus
         };
 
         setMessages(prev => [...prev, userMessage, aiMessage]);
 
-        // Record progress
+        // Guardar en Firebase si está disponible
+        if (onPracticeComplete && firebaseConnectionStatus === 'connected') {
+          const practiceData = {
+            question: currentQuestion.question,
+            userResponse: voice.transcript,
+            transcript: voice.transcript,
+            aiResponse: aiResult,
+            duration: voice.duration,
+            level: currentQuestion.level || 'beginner',
+            category: currentQuestion.category || 'general',
+            score: aiResult.score
+          };
+
+          try {
+            const saveResult = await onPracticeComplete(practiceData);
+            if (saveResult.success) {
+              const successMessage = {
+                id: Date.now() + 2,
+                type: 'system',
+                content: '🔥 Conversación guardada en Firebase',
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                sessionId: saveResult.sessionId
+              };
+              setMessages(prev => [...prev, successMessage]);
+            }
+          } catch (firebaseError) {
+            console.error('❌ Firebase error:', firebaseError);
+          }
+        } else if (firebaseConnectionStatus !== 'connected') {
+          const localMessage = {
+            id: Date.now() + 2,
+            type: 'system',
+            content: '📱 Datos guardados localmente',
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          };
+          setMessages(prev => [...prev, localMessage]);
+        }
+
         recordAnswer({
           ...currentQuestion,
           userResponse: voice.transcript,
@@ -644,27 +561,27 @@ const EnglishPracticeApp = () => {
         <div className="max-w-md mx-auto">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-gray-800 mb-2">👋 ¡Hola!</h1>
-            <p className="text-gray-600">Practica con AI conversacional</p>
+            <p className="text-gray-600">Practica con IA conversacional + Firebase</p>
             
-            {/* API Status */}
+            {/* Firebase Status */}
             <div className={`mt-4 p-3 rounded-lg text-sm ${
-              voice.apiKeyStatus === 'valid' 
+              firebaseConnectionStatus === 'connected' 
                 ? 'bg-green-50 border border-green-200 text-green-700'
-                : voice.apiKeyStatus === 'invalid'
-                ? 'bg-red-50 border border-red-200 text-red-700'
-                : 'bg-yellow-50 border border-yellow-200 text-yellow-700'
+                : firebaseConnectionStatus === 'error'
+                ? 'bg-yellow-50 border border-yellow-200 text-yellow-700'
+                : 'bg-blue-50 border border-blue-200 text-blue-700'
             }`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center">
                   <div className={`w-2 h-2 rounded-full mr-2 ${
-                    voice.apiKeyStatus === 'valid' ? 'bg-green-500' :
-                    voice.apiKeyStatus === 'invalid' ? 'bg-red-500' :
-                    'bg-yellow-500'
+                    firebaseConnectionStatus === 'connected' ? 'bg-green-500' :
+                    firebaseConnectionStatus === 'error' ? 'bg-yellow-500' :
+                    'bg-blue-500'
                   }`}></div>
                   <span>
-                    {voice.apiKeyStatus === 'valid' ? '🤖 AI Real Activo' :
-                     voice.apiKeyStatus === 'invalid' ? '❌ API Key Inválida' :
-                     '⚠️ Sin API Key - Modo Práctica'}
+                    {firebaseConnectionStatus === 'connected' ? '🔥 Firebase Activo' :
+                     firebaseConnectionStatus === 'error' ? '📱 Modo Local' :
+                     '🔄 Conectando Firebase...'}
                   </span>
                 </div>
                 <button
@@ -674,8 +591,33 @@ const EnglishPracticeApp = () => {
                   <Settings size={16} />
                 </button>
               </div>
+              
+              {/* Firebase Stats */}
+              {firebaseStats && firebaseConnectionStatus === 'connected' && (
+                <div className="mt-2 text-xs">
+                  <div className="flex justify-between">
+                    <span>Total guardado:</span>
+                    <span>{firebaseStats.totalSessions || 0} sesiones</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Promedio:</span>
+                    <span>{firebaseStats.averageScore || 0}% score</span>
+                  </div>
+                </div>
+              )}
+              
+              {/* Usuario Firebase */}
+              {firebaseUser && (
+                <div className="mt-2 text-xs">
+                  <div className="flex items-center">
+                    <User size={12} className="mr-1" />
+                    <span>ID: {firebaseUser.uid.substring(0, 8)}...{firebaseUser.isAnonymous ? ' (Anónimo)' : ''}</span>
+                  </div>
+                </div>
+              )}
             </div>
             
+            {/* Progreso local */}
             <div className="mt-4 bg-white rounded-lg p-4 shadow-sm">
               <p className="text-sm text-gray-600 mb-2">Progreso de Hoy</p>
               <div className="flex items-center">
@@ -700,7 +642,9 @@ const EnglishPracticeApp = () => {
               <Mic className="mx-auto mb-2" size={32} />
               <span className="text-xl font-semibold">🤖 Conversación con IA</span>
               <p className="text-sm text-blue-100 mt-1">
-                {voice.apiKeyStatus === 'valid' ? 'AI real activo' : 'Modo práctica sin API key'}
+                {voice.apiKeyStatus === 'valid' ? 'AI real' : 'Modo práctica'} 
+                {' + '}
+                {firebaseConnectionStatus === 'connected' ? 'Firebase activo' : 'Local storage'}
               </p>
             </button>
 
@@ -729,9 +673,7 @@ const EnglishPracticeApp = () => {
               <div className="flex items-start">
                 <AlertTriangle className="text-blue-500 mr-3 mt-1" size={20} />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-800 mb-1">
-                    🚀 Activa el AI Real
-                  </p>
+                  <p className="text-sm font-medium text-gray-800 mb-1">🚀 Activa el AI Real</p>
                   <p className="text-xs text-gray-600 mb-3">
                     Configura tu API key de OpenRouter para análisis inteligente completo
                   </p>
@@ -750,7 +692,7 @@ const EnglishPracticeApp = () => {
     );
   };
 
-  // 🎙️ SPEAKING SCREEN (sin cambios, solo añadir indicadores de API status)
+  // 🎙️ SPEAKING SCREEN
   const SpeakingScreen = () => (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       {/* Header */}
@@ -774,12 +716,23 @@ const EnglishPracticeApp = () => {
                 <p className="text-sm text-blue-200">
                   {voice.isRecording ? `Grabando... (${voice.duration}s)` : 
                    voice.isProcessing ? 'Analizando...' : 
+                   firebaseConnectionStatus === 'connected' ? '🔥 Firebase + AI activo' : 
                    voice.apiKeyStatus === 'valid' ? 'AI real activo' : 'Sin API key'}
                 </p>
               </div>
             </div>
           </div>
           <div className="flex space-x-2">
+            <div className={`px-2 py-1 rounded text-xs ${
+              firebaseConnectionStatus === 'connected' 
+                ? 'bg-green-500 bg-opacity-20 text-green-100' 
+                : firebaseConnectionStatus === 'error'
+                ? 'bg-yellow-500 bg-opacity-20 text-yellow-100'
+                : 'bg-blue-500 bg-opacity-20 text-blue-100'
+            }`}>
+              {firebaseConnectionStatus === 'connected' ? '🔥 DB' : 
+               firebaseConnectionStatus === 'error' ? '📱 Local' : '🔄 Sync'}
+            </div>
             <button
               onClick={() => setShowApiConfig(true)}
               className="p-2 hover:bg-blue-700 rounded-full"
@@ -800,11 +753,14 @@ const EnglishPracticeApp = () => {
       <div className="flex-1 p-4 space-y-4 overflow-y-auto">
         {messages.map((message) => (
           <div key={message.id} className={`flex ${message.type === 'user' ? 'justify-end' : 'items-start'}`}>
-            {(message.type === 'bot' || message.type === 'ai') && (
+            {(message.type === 'bot' || message.type === 'ai' || message.type === 'system') && (
               <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-2 text-white text-sm ${
-                message.type === 'ai' ? 'bg-gradient-to-r from-purple-500 to-blue-500' : 'bg-green-500'
+                message.type === 'ai' ? 'bg-gradient-to-r from-purple-500 to-blue-500' : 
+                message.type === 'system' ? 'bg-gradient-to-r from-green-500 to-blue-500' :
+                'bg-green-500'
               }`}>
-                {message.type === 'ai' && message.apiKeyStatus === 'valid' ? '🤖' : '🎓'}
+                {message.type === 'ai' && message.apiKeyStatus === 'valid' ? '🤖' : 
+                 message.type === 'system' ? '🔥' : '🎓'}
               </div>
             )}
             
@@ -813,6 +769,8 @@ const EnglishPracticeApp = () => {
                 ? 'bg-blue-500 text-white rounded-tr-none' 
                 : message.type === 'ai'
                 ? 'bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-tl-none'
+                : message.type === 'system'
+                ? 'bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-tl-none'
                 : 'bg-white rounded-tl-none'
             }`}>
               <p className={message.type === 'user' ? 'text-white' : 'text-gray-800'}>
@@ -852,6 +810,19 @@ const EnglishPracticeApp = () => {
                     </div>
                   </div>
                   
+                  {/* Firebase Status in AI Response */}
+                  {message.firebaseStatus && (
+                    <div className={`text-xs p-2 rounded ${
+                      message.firebaseStatus === 'connected' 
+                        ? 'bg-green-50 text-green-700' 
+                        : 'bg-yellow-50 text-yellow-700'
+                    }`}>
+                      {message.firebaseStatus === 'connected' 
+                        ? '🔥 Guardado en Firebase' 
+                        : '📱 Guardado localmente'}
+                    </div>
+                  )}
+                  
                   {message.suggestions && (
                     <div className="bg-white bg-opacity-80 p-2 rounded text-xs">
                       <p className="font-medium text-gray-700 mb-1">💡 Sugerencias:</p>
@@ -875,9 +846,17 @@ const EnglishPracticeApp = () => {
                 </div>
               )}
               
+              {/* System Message Details */}
+              {message.type === 'system' && message.sessionId && (
+                <div className="mt-2 text-xs text-green-600">
+                  ID: {message.sessionId.substring(0, 8)}...
+                </div>
+              )}
+              
               <span className={`text-xs mt-2 block ${
                 message.type === 'user' ? 'text-blue-200' : 
-                message.type === 'ai' ? 'text-purple-600' : 'text-gray-500'
+                message.type === 'ai' ? 'text-purple-600' : 
+                message.type === 'system' ? 'text-green-600' : 'text-gray-500'
               }`}>
                 {message.timestamp}
               </span>
@@ -971,10 +950,20 @@ const EnglishPracticeApp = () => {
             <div className="flex items-center justify-center space-x-4">
               <div className="flex items-center">
                 <div className={`w-2 h-2 rounded-full mr-2 ${
+                  firebaseConnectionStatus === 'connected' ? 'bg-green-500' : 
+                  firebaseConnectionStatus === 'error' ? 'bg-yellow-500' : 'bg-blue-500'
+                }`}></div>
+                <span className="text-gray-600">
+                  {firebaseConnectionStatus === 'connected' ? 'Firebase' : 
+                   firebaseConnectionStatus === 'error' ? 'Local' : 'Syncing'}
+                </span>
+              </div>
+              <div className="flex items-center">
+                <div className={`w-2 h-2 rounded-full mr-2 ${
                   voice.apiKeyStatus === 'valid' ? 'bg-green-500' : 'bg-yellow-500'
                 }`}></div>
                 <span className="text-gray-600">
-                  {voice.apiKeyStatus === 'valid' ? 'AI Real' : 'Modo Práctica'}
+                  {voice.apiKeyStatus === 'valid' ? 'AI Real' : 'Practice'}
                 </span>
               </div>
               <div className="flex items-center">
@@ -983,11 +972,7 @@ const EnglishPracticeApp = () => {
               </div>
               <div className="flex items-center">
                 <div className={`w-2 h-2 rounded-full mr-2 ${voice.transcript ? 'bg-green-500' : 'bg-gray-300'}`}></div>
-                <span className="text-gray-600">Recognition</span>
-              </div>
-              <div className="flex items-center">
-                <div className={`w-2 h-2 rounded-full mr-2 ${voice.isProcessing ? 'bg-blue-500 animate-pulse' : 'bg-gray-300'}`}></div>
-                <span className="text-gray-600">Processing</span>
+                <span className="text-gray-600">Speech</span>
               </div>
             </div>
           </div>
@@ -996,7 +981,7 @@ const EnglishPracticeApp = () => {
     </div>
   );
 
-  // 🎧 LISTENING SCREEN (sin cambios)
+  // 🎧 LISTENING SCREEN
   const ListeningScreen = () => (
     <div className="min-h-screen bg-green-50 p-6">
       <div className="max-w-md mx-auto">
@@ -1023,7 +1008,7 @@ const EnglishPracticeApp = () => {
     </div>
   );
 
-  // 📊 PROGRESS SCREEN (sin cambios)
+  // 📊 PROGRESS SCREEN
   const ProgressScreen = () => {
     const safeProgress = {
       ...progress,
@@ -1046,14 +1031,43 @@ const EnglishPracticeApp = () => {
           </div>
           
           <div className="space-y-4">
+            {/* Firebase Data Card */}
+            {firebaseConnectionStatus === 'connected' && firebaseStats && (
+              <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-6 shadow-lg border border-green-200">
+                <h3 className="text-lg font-semibold mb-4 text-center flex items-center justify-center">
+                  <Database size={20} className="mr-2" />
+                  🔥 Datos Firebase
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white p-3 rounded-lg text-center">
+                    <p className="text-2xl font-bold text-green-600">{firebaseStats.totalSessions || 0}</p>
+                    <p className="text-sm text-gray-600">Sesiones en DB</p>
+                  </div>
+                  <div className="bg-white p-3 rounded-lg text-center">
+                    <p className="text-2xl font-bold text-blue-600">{firebaseStats.averageScore || 0}%</p>
+                    <p className="text-sm text-gray-600">Promedio Total</p>
+                  </div>
+                </div>
+                <div className="mt-3 text-center">
+                  <p className="text-xs text-green-700">✅ Datos sincronizados con la nube</p>
+                  {firebaseStats.totalQuestions && (
+                    <p className="text-xs text-gray-600">
+                      Total: {firebaseStats.totalQuestions} preguntas respondidas
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Estadísticas locales */}
             <div className="bg-white rounded-xl p-6 shadow-lg">
               <h3 className="text-lg font-semibold mb-4 text-center">
-                Estadísticas {voice.apiKeyStatus === 'valid' ? 'con AI Real' : 'en Modo Práctica'}
+                📱 Progreso Local {firebaseConnectionStatus === 'connected' ? '+ Firebase' : '(Solo Local)'}
               </h3>
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-blue-50 p-3 rounded-lg text-center">
                   <p className="text-2xl font-bold text-blue-600">{safeProgress.todayProgress}</p>
-                  <p className="text-sm text-gray-600">Conversaciones</p>
+                  <p className="text-sm text-gray-600">Conversaciones Hoy</p>
                 </div>
                 <div className="bg-green-50 p-3 rounded-lg text-center">
                   <p className="text-2xl font-bold text-green-600">{safeProgress.currentStreak}</p>
@@ -1062,38 +1076,78 @@ const EnglishPracticeApp = () => {
               </div>
             </div>
             
+            {/* Firebase Status Card */}
             <div className={`rounded-xl p-6 shadow-lg border ${
-              voice.apiKeyStatus === 'valid' 
-                ? 'bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200'
-                : 'bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200'
+              firebaseConnectionStatus === 'connected' 
+                ? 'bg-gradient-to-r from-green-50 to-blue-50 border-green-200'
+                : firebaseConnectionStatus === 'error'
+                ? 'bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200'
+                : 'bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200'
             }`}>
               <h3 className="text-lg font-semibold mb-3 text-gray-800">
-                {voice.apiKeyStatus === 'valid' ? '🤖 AI Real Activo' : '📝 Modo Práctica'}
+                {firebaseConnectionStatus === 'connected' ? '🔥 Firebase Activo' : 
+                 firebaseConnectionStatus === 'error' ? '📱 Modo Local' : 
+                 '🔄 Conectando...'}
               </h3>
               <div className="space-y-2">
                 <div className="flex items-center text-sm">
                   <div className={`w-2 h-2 rounded-full mr-3 ${
-                    voice.apiKeyStatus === 'valid' ? 'bg-green-500' : 'bg-yellow-500'
+                    firebaseConnectionStatus === 'connected' ? 'bg-green-500' : 
+                    firebaseConnectionStatus === 'error' ? 'bg-yellow-500' : 'bg-blue-500'
                   }`}></div>
                   <span className="text-gray-700">
-                    {voice.apiKeyStatus === 'valid' 
-                      ? 'Análisis inteligente con Claude 3.5' 
-                      : 'Práctica sin límites'
+                    {firebaseConnectionStatus === 'connected' 
+                      ? 'Datos guardados en la nube automáticamente' 
+                      : firebaseConnectionStatus === 'error'
+                      ? 'Datos guardados localmente (se sincronizarán)' 
+                      : 'Estableciendo conexión con Firebase...'
                     }
                   </span>
                 </div>
+                
+                {firebaseUser && (
+                  <div className="flex items-center text-sm">
+                    <User size={14} className="mr-3 text-gray-500" />
+                    <span className="text-gray-700">
+                      Usuario: {firebaseUser.uid.substring(0, 12)}...
+                      {firebaseUser.isAnonymous && ' (Anónimo)'}
+                    </span>
+                  </div>
+                )}
+                
                 <div className="flex items-center text-sm">
                   <div className="w-2 h-2 rounded-full bg-blue-500 mr-3"></div>
                   <span className="text-gray-700">Reconocimiento de voz activo</span>
                 </div>
                 <div className="flex items-center text-sm">
                   <div className="w-2 h-2 rounded-full bg-purple-500 mr-3"></div>
-                  <span className="text-gray-700">Audio feedback automático</span>
+                  <span className="text-gray-700">
+                    {voice.apiKeyStatus === 'valid' ? 'IA Claude 3.5 Sonnet activa' : 'Modo práctica activo'}
+                  </span>
                 </div>
-                {voice.apiKeyStatus === 'valid' && (
-                  <div className="flex items-center text-sm">
-                    <div className="w-2 h-2 rounded-full bg-orange-500 mr-3"></div>
-                    <span className="text-gray-700">OpenRouter API configurado</span>
+                
+                {/* Enlaces a Firebase Console */}
+                {firebaseConnectionStatus === 'connected' && (
+                  <div className="mt-3 pt-3 border-t border-gray-200">
+                    <p className="text-xs font-medium text-gray-700 mb-2">🔗 Ver en Firebase:</p>
+                    <div className="space-y-1">
+                      <a 
+                        href="https://console.firebase.google.com/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:underline block"
+                      >
+                        📊 Ver sesiones guardadas
+                      </a>
+                      <a 
+                        href="https://console.firebase.google.com/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:underline block"
+                      >
+                        👤 Ver usuarios registrados
+                      </a>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1123,5 +1177,4 @@ const EnglishPracticeApp = () => {
   );
 };
 
-// 🚨 EXPORT AQUÍ - FUERA DEL COMPONENTE
 export default EnglishPracticeApp;
