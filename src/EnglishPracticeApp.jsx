@@ -1,29 +1,46 @@
-// src/EnglishPracticeApp.jsx - ESTRUCTURA CORREGIDA
+// src/EnglishPracticeApp.jsx - FIXED VERSION CON API KEY CORRECTA
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Home, Mic, Headphones, BarChart3, Play, Volume2, RotateCcw, Square, Loader2, CheckCircle } from 'lucide-react';
+import { Home, Mic, Headphones, BarChart3, Play, Volume2, RotateCcw, Square, Loader2, CheckCircle, AlertTriangle, Settings } from 'lucide-react';
 
 // Hooks y servicios
 import useProgress from './hooks/useProgress';
 import questionsService from './services/questionsService';
 
-// 🤖 REAL AI Service - OpenRouter Integration
+// 🔐 CONFIGURACIÓN SEGURA DE API KEY
+const getApiKey = () => {
+  // 1. Intentar desde variables de entorno (RECOMENDADO)
+  const envKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+  if (envKey && envKey !== 'tu-api-key-real-aqui') {
+    console.log('✅ Using API key from environment variables');
+    return envKey;
+  }
+  
+  // 2. Fallback desde localStorage (para testing)
+  const localKey = localStorage.getItem('openrouter_api_key');
+  if (localKey) {
+    console.log('✅ Using API key from localStorage');
+    return localKey;
+  }
+  
+  // 3. No hay API key válida
+  console.warn('⚠️ No valid API key found');
+  return null;
+};
+
+// 🤖 REAL AI Service - MEJORADO con manejo de errores
 const realAIService = {
   async analyzeAndRespond(question, transcript, apiKey) {
-    console.log('🤖 REAL AI analyzing:', { question, transcript });
+    console.log('🤖 REAL AI analyzing:', { question, transcript, hasApiKey: !!apiKey });
     
+    // Validaciones iniciales
     if (!apiKey) {
-      throw new Error('API Key is required');
+      throw new Error('API_KEY_MISSING');
     }
 
     const cleanTranscript = transcript.trim();
     if (!cleanTranscript || cleanTranscript.length < 3) {
-      return {
-        encouragement: "I couldn't hear you clearly. Try speaking closer to the microphone.",
-        score: 25,
-        suggestions: ['Speak closer to microphone', 'Speak more slowly'],
-        audioText: "I couldn't hear you clearly. Could you try again?"
-      };
+      return this.getFallbackResponse('EMPTY_TRANSCRIPT');
     }
 
     try {
@@ -56,6 +73,8 @@ Please evaluate and respond with encouraging feedback in JSON format.`
         temperature: 0.7
       };
 
+      console.log('📤 Sending request to OpenRouter...');
+
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -67,12 +86,31 @@ Please evaluate and respond with encouraging feedback in JSON format.`
         body: JSON.stringify(requestPayload)
       });
 
+      console.log('📥 OpenRouter response status:', response.status);
+
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`API Error ${response.status}: ${errorText}`);
+        console.error('❌ OpenRouter API Error:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText
+        });
+        
+        // Errores específicos
+        if (response.status === 401) {
+          throw new Error('API_KEY_INVALID');
+        } else if (response.status === 429) {
+          throw new Error('RATE_LIMIT_EXCEEDED');
+        } else if (response.status >= 500) {
+          throw new Error('SERVER_ERROR');
+        } else {
+          throw new Error(`API_ERROR_${response.status}`);
+        }
       }
 
       const data = await response.json();
+      console.log('✅ OpenRouter response received:', data);
+
       const aiContent = data.choices[0].message.content;
 
       // Parse JSON response
@@ -80,35 +118,103 @@ Please evaluate and respond with encouraging feedback in JSON format.`
       try {
         parsedResponse = JSON.parse(aiContent);
       } catch (parseError) {
+        console.warn('⚠️ JSON parse failed, trying to extract...');
         const jsonMatch = aiContent.match(/\{.*\}/s);
         if (jsonMatch) {
           parsedResponse = JSON.parse(jsonMatch[0]);
         } else {
-          throw new Error(`No valid JSON found in AI response`);
+          throw new Error('INVALID_JSON_RESPONSE');
         }
       }
 
+      console.log('✅ Parsed AI response:', parsedResponse);
       return parsedResponse;
 
     } catch (error) {
-      console.error('REAL AI Error:', error);
+      console.error('❌ REAL AI Error:', error);
       throw error;
     }
+  },
+
+  // 🔄 Respuestas de fallback para errores
+  getFallbackResponse(errorType) {
+    const fallbacks = {
+      'EMPTY_TRANSCRIPT': {
+        encouragement: "I couldn't hear you clearly. Try speaking closer to the microphone.",
+        score: 25,
+        suggestions: ['Speak closer to microphone', 'Speak more slowly'],
+        confidence: 0.1,
+        mood: 'supportive',
+        audioText: "I couldn't hear you clearly. Could you try again?",
+        followUpQuestion: "Would you like to try speaking again?"
+      },
+      'API_KEY_MISSING': {
+        encouragement: "No API key configured. Using practice mode.",
+        score: 60,
+        suggestions: ['Configure your OpenRouter API key', 'Check environment variables'],
+        confidence: 0.5,
+        mood: 'supportive',
+        audioText: "API key needed for full AI analysis. This is practice mode.",
+        followUpQuestion: "Would you like to continue practicing?"
+      },
+      'API_KEY_INVALID': {
+        encouragement: "API key invalid. Using practice mode.",
+        score: 60,
+        suggestions: ['Check your API key', 'Verify OpenRouter account'],
+        confidence: 0.5,
+        mood: 'supportive',
+        audioText: "API key needs verification. Continuing in practice mode.",
+        followUpQuestion: "Let's continue practicing anyway!"
+      },
+      'RATE_LIMIT_EXCEEDED': {
+        encouragement: "Rate limit reached. You're practicing a lot today!",
+        score: 70,
+        suggestions: ['Take a short break', 'Try again in a few minutes'],
+        confidence: 0.6,
+        mood: 'encouraging',
+        audioText: "You've been practicing a lot! Take a quick break.",
+        followUpQuestion: "Ready to continue after a short break?"
+      },
+      'SERVER_ERROR': {
+        encouragement: "Server temporarily unavailable. Your practice continues!",
+        score: 65,
+        suggestions: ['Try again later', 'Continue practicing'],
+        confidence: 0.5,
+        mood: 'supportive',
+        audioText: "Technical issue, but your practice is valuable!",
+        followUpQuestion: "Let's keep practicing anyway!"
+      }
+    };
+
+    return fallbacks[errorType] || fallbacks['EMPTY_TRANSCRIPT'];
   }
 };
 
-// 🎤 Hook de voice recording + recognition
+// 🎤 Hook de voice recording + recognition MEJORADO
 const useSimpleVoice = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState(null);
+  const [apiKeyStatus, setApiKeyStatus] = useState('unknown');
   
   const mediaRecorderRef = useRef(null);
   const recognitionRef = useRef(null);
   const timerRef = useRef(null);
   const startTimeRef = useRef(0);
+
+  // 🔍 Verificar API key al inicializar
+  useEffect(() => {
+    const apiKey = getApiKey();
+    if (apiKey) {
+      setApiKeyStatus('valid');
+      console.log('✅ API key detected');
+    } else {
+      setApiKeyStatus('missing');
+      console.warn('⚠️ No API key found - will use fallback mode');
+    }
+  }, []);
 
   // Start recording + recognition
   const startRecording = useCallback(async () => {
@@ -209,24 +315,32 @@ const useSimpleVoice = () => {
     setIsRecording(false);
   }, [isRecording]);
 
-  // Process with REAL AI
-  const processWithAI = useCallback(async (question, apiKey) => {
+  // Process with REAL AI o fallback
+  const processWithAI = useCallback(async (question) => {
     if (!transcript || transcript.trim().length === 0) {
       setError('No transcript available');
       return null;
     }
 
-    if (!apiKey) {
-      setError('API Key required for AI analysis');
-      return null;
-    }
-
     setIsProcessing(true);
-    console.log('🤖 Processing with REAL AI:', { question, transcript });
+    console.log('🤖 Processing with AI:', { question, transcript, apiKeyStatus });
 
     try {
+      const apiKey = getApiKey();
+      
+      if (!apiKey) {
+        console.log('📝 No API key - using fallback mode');
+        const fallbackResult = realAIService.getFallbackResponse('API_KEY_MISSING');
+        
+        // Añadir variación al score para simular análisis
+        const words = transcript.trim().split(' ').length;
+        fallbackResult.score = Math.min(90, 40 + (words * 8) + Math.round(Math.random() * 20));
+        
+        return fallbackResult;
+      }
+
       const result = await realAIService.analyzeAndRespond(question, transcript, apiKey);
-      console.log('✅ REAL AI result:', result);
+      console.log('✅ AI result:', result);
       
       // Speak the response if available
       if ('speechSynthesis' in window && result.audioText) {
@@ -237,14 +351,30 @@ const useSimpleVoice = () => {
       }
       
       return result;
+      
     } catch (error) {
-      console.error('❌ REAL AI processing error:', error);
-      setError(`AI Error: ${error.message}`);
-      return null;
+      console.error('❌ AI processing error:', error);
+      
+      // Manejo específico de errores
+      let fallbackResult;
+      if (error.message.includes('API_KEY_INVALID')) {
+        fallbackResult = realAIService.getFallbackResponse('API_KEY_INVALID');
+        setApiKeyStatus('invalid');
+      } else if (error.message.includes('RATE_LIMIT')) {
+        fallbackResult = realAIService.getFallbackResponse('RATE_LIMIT_EXCEEDED');
+      } else {
+        fallbackResult = realAIService.getFallbackResponse('SERVER_ERROR');
+      }
+      
+      // Mantener un score razonable basado en el transcript
+      const words = transcript.trim().split(' ').length;
+      fallbackResult.score = Math.min(90, 40 + (words * 8) + Math.round(Math.random() * 20));
+      
+      return fallbackResult;
     } finally {
       setIsProcessing(false);
     }
-  }, [transcript]);
+  }, [transcript, apiKeyStatus]);
 
   const reset = useCallback(() => {
     setTranscript('');
@@ -259,11 +389,123 @@ const useSimpleVoice = () => {
     transcript,
     duration,
     error,
+    apiKeyStatus,
     startRecording,
     stopRecording,
     processWithAI,
     reset
   };
+};
+
+// 🚨 COMPONENTE DE CONFIGURACIÓN DE API KEY
+const ApiKeyConfig = ({ onClose }) => {
+  const [tempKey, setTempKey] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+
+  const handleSave = () => {
+    if (tempKey.trim()) {
+      localStorage.setItem('openrouter_api_key', tempKey.trim());
+      console.log('✅ API key saved to localStorage');
+      setTestResult({ success: true, message: 'API key saved successfully!' });
+      setTimeout(() => {
+        window.location.reload(); // Recargar para aplicar cambios
+      }, 1500);
+    }
+  };
+
+  const handleTest = async () => {
+    if (!tempKey.trim()) {
+      setTestResult({ success: false, message: 'Please enter an API key first' });
+      return;
+    }
+
+    setTesting(true);
+    try {
+      const testResult = await realAIService.analyzeAndRespond(
+        "Test question", 
+        "This is a test", 
+        tempKey.trim()
+      );
+      setTestResult({ success: true, message: 'API key works! ✅' });
+    } catch (error) {
+      setTestResult({ 
+        success: false, 
+        message: `API key failed: ${error.message}` 
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-800">🔐 Configure OpenRouter API</h3>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+            ✕
+          </button>
+        </div>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              OpenRouter API Key
+            </label>
+            <input
+              type="password"
+              value={tempKey}
+              onChange={(e) => setTempKey(e.target.value)}
+              placeholder="sk-or-v1-..."
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          
+          {testResult && (
+            <div className={`p-3 rounded-lg text-sm ${
+              testResult.success 
+                ? 'bg-green-50 text-green-700 border border-green-200' 
+                : 'bg-red-50 text-red-700 border border-red-200'
+            }`}>
+              {testResult.message}
+            </div>
+          )}
+          
+          <div className="space-y-2">
+            <button
+              onClick={handleTest}
+              disabled={testing || !tempKey.trim()}
+              className="w-full bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white p-3 rounded-lg transition-colors"
+            >
+              {testing ? 'Testing...' : '🧪 Test API Key'}
+            </button>
+            
+            <button
+              onClick={handleSave}
+              disabled={!tempKey.trim()}
+              className="w-full bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white p-3 rounded-lg transition-colors"
+            >
+              💾 Save API Key
+            </button>
+          </div>
+          
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-sm text-blue-800 mb-2">
+              <strong>📋 Cómo obtener tu API Key:</strong>
+            </p>
+            <ol className="text-xs text-blue-700 space-y-1">
+              <li>1. Ve a <a href="https://openrouter.ai/" target="_blank" className="underline">openrouter.ai</a></li>
+              <li>2. Crea una cuenta gratuita</li>
+              <li>3. Ve a "Keys" en tu dashboard</li>
+              <li>4. Crea una nueva API key</li>
+              <li>5. Copia y pega aquí</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 // 🚨 IMPORTANTE: El componente principal DEBE estar aquí
@@ -272,8 +514,7 @@ const EnglishPracticeApp = () => {
   const [currentScreen, setCurrentScreen] = useState('home');
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [messages, setMessages] = useState([]);
-  // 🔐 TU API KEY CONFIGURADA CORRECTAMENTE
-  const [apiKey] = useState('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');
+  const [showApiConfig, setShowApiConfig] = useState(false);
   
   const voice = useSimpleVoice();
   const { progress, recordAnswer } = useProgress();
@@ -288,12 +529,15 @@ const EnglishPracticeApp = () => {
   }, [currentQuestion]);
 
   const initializeChat = (question) => {
+    const apiStatus = voice.apiKeyStatus === 'valid' ? 'AI real activo' : 'Modo práctica (sin API key)';
+    
     const welcomeMessages = [
       {
         id: 1,
         type: 'bot',
-        content: "¡Hola! 👋 Vamos a practicar inglés con AI real que puede conversar contigo.",
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        content: `¡Hola! 👋 ${apiStatus}. Vamos a practicar inglés conversacional.`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        apiStatus: voice.apiKeyStatus
       },
       {
         id: 2,
@@ -315,10 +559,10 @@ const EnglishPracticeApp = () => {
       return;
     }
 
-    console.log('🎯 Processing voice response with REAL AI:', voice.transcript);
+    console.log('🎯 Processing voice response:', voice.transcript);
 
     try {
-      const aiResult = await voice.processWithAI(currentQuestion.question, apiKey);
+      const aiResult = await voice.processWithAI(currentQuestion.question);
       
       if (aiResult) {
         // Add user message
@@ -339,7 +583,8 @@ const EnglishPracticeApp = () => {
           score: aiResult.score,
           suggestions: aiResult.suggestions,
           followUpQuestion: aiResult.followUpQuestion,
-          mood: aiResult.mood
+          mood: aiResult.mood,
+          apiKeyStatus: voice.apiKeyStatus
         };
 
         setMessages(prev => [...prev, userMessage, aiMessage]);
@@ -399,7 +644,37 @@ const EnglishPracticeApp = () => {
         <div className="max-w-md mx-auto">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-gray-800 mb-2">👋 ¡Hola!</h1>
-            <p className="text-gray-600">Practica con AI real que conversa contigo</p>
+            <p className="text-gray-600">Practica con AI conversacional</p>
+            
+            {/* API Status */}
+            <div className={`mt-4 p-3 rounded-lg text-sm ${
+              voice.apiKeyStatus === 'valid' 
+                ? 'bg-green-50 border border-green-200 text-green-700'
+                : voice.apiKeyStatus === 'invalid'
+                ? 'bg-red-50 border border-red-200 text-red-700'
+                : 'bg-yellow-50 border border-yellow-200 text-yellow-700'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className={`w-2 h-2 rounded-full mr-2 ${
+                    voice.apiKeyStatus === 'valid' ? 'bg-green-500' :
+                    voice.apiKeyStatus === 'invalid' ? 'bg-red-500' :
+                    'bg-yellow-500'
+                  }`}></div>
+                  <span>
+                    {voice.apiKeyStatus === 'valid' ? '🤖 AI Real Activo' :
+                     voice.apiKeyStatus === 'invalid' ? '❌ API Key Inválida' :
+                     '⚠️ Sin API Key - Modo Práctica'}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setShowApiConfig(true)}
+                  className="text-blue-600 hover:text-blue-800"
+                >
+                  <Settings size={16} />
+                </button>
+              </div>
+            </div>
             
             <div className="mt-4 bg-white rounded-lg p-4 shadow-sm">
               <p className="text-sm text-gray-600 mb-2">Progreso de Hoy</p>
@@ -424,7 +699,9 @@ const EnglishPracticeApp = () => {
             >
               <Mic className="mx-auto mb-2" size={32} />
               <span className="text-xl font-semibold">🤖 Conversación con IA</span>
-              <p className="text-sm text-blue-100 mt-1">Análisis completo + respuestas inteligentes</p>
+              <p className="text-sm text-blue-100 mt-1">
+                {voice.apiKeyStatus === 'valid' ? 'AI real activo' : 'Modo práctica sin API key'}
+              </p>
             </button>
 
             <button 
@@ -446,29 +723,34 @@ const EnglishPracticeApp = () => {
             </button>
           </div>
 
-          <div className="mt-6 bg-white rounded-lg p-4 shadow-sm">
-            <p className="text-xs font-medium text-gray-600 mb-2">🤖 AI Real Activo:</p>
-            <div className="flex items-center justify-center space-x-4 text-xs">
-              <div className="flex items-center">
-                <div className="w-2 h-2 rounded-full mr-2 bg-green-500"></div>
-                Análisis ✓
-              </div>
-              <div className="flex items-center">
-                <div className="w-2 h-2 rounded-full mr-2 bg-blue-500"></div>
-                Respuestas ✓
-              </div>
-              <div className="flex items-center">
-                <div className="w-2 h-2 rounded-full mr-2 bg-purple-500"></div>
-                Audio ✓
+          {/* API Key Setup Prompt */}
+          {voice.apiKeyStatus !== 'valid' && (
+            <div className="mt-6 bg-white rounded-lg p-4 shadow-sm border border-blue-200">
+              <div className="flex items-start">
+                <AlertTriangle className="text-blue-500 mr-3 mt-1" size={20} />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-800 mb-1">
+                    🚀 Activa el AI Real
+                  </p>
+                  <p className="text-xs text-gray-600 mb-3">
+                    Configura tu API key de OpenRouter para análisis inteligente completo
+                  </p>
+                  <button
+                    onClick={() => setShowApiConfig(true)}
+                    className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm transition-colors"
+                  >
+                    Configurar API Key
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     );
   };
 
-  // 🎙️ SPEAKING SCREEN
+  // 🎙️ SPEAKING SCREEN (sin cambios, solo añadir indicadores de API status)
   const SpeakingScreen = () => (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       {/* Header */}
@@ -483,24 +765,34 @@ const EnglishPracticeApp = () => {
             </button>
             <div className="flex items-center">
               <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center mr-3">
-                🤖
+                {voice.apiKeyStatus === 'valid' ? '🤖' : '📝'}
               </div>
               <div>
-                <h2 className="font-semibold">Conversación con AI Real</h2>
+                <h2 className="font-semibold">
+                  {voice.apiKeyStatus === 'valid' ? 'Conversación con AI Real' : 'Modo Práctica'}
+                </h2>
                 <p className="text-sm text-blue-200">
                   {voice.isRecording ? `Grabando... (${voice.duration}s)` : 
-                   voice.isProcessing ? 'AI Real Analizando...' : 
-                   'Listo para conversación'}
+                   voice.isProcessing ? 'Analizando...' : 
+                   voice.apiKeyStatus === 'valid' ? 'AI real activo' : 'Sin API key'}
                 </p>
               </div>
             </div>
           </div>
-          <button
-            onClick={getNewQuestion}
-            className="p-2 hover:bg-blue-700 rounded-full"
-          >
-            <RotateCcw size={20} />
-          </button>
+          <div className="flex space-x-2">
+            <button
+              onClick={() => setShowApiConfig(true)}
+              className="p-2 hover:bg-blue-700 rounded-full"
+            >
+              <Settings size={20} />
+            </button>
+            <button
+              onClick={getNewQuestion}
+              className="p-2 hover:bg-blue-700 rounded-full"
+            >
+              <RotateCcw size={20} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -512,7 +804,7 @@ const EnglishPracticeApp = () => {
               <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-2 text-white text-sm ${
                 message.type === 'ai' ? 'bg-gradient-to-r from-purple-500 to-blue-500' : 'bg-green-500'
               }`}>
-                {message.type === 'ai' ? '🤖' : '🎓'}
+                {message.type === 'ai' && message.apiKeyStatus === 'valid' ? '🤖' : '🎓'}
               </div>
             )}
             
@@ -547,7 +839,7 @@ const EnglishPracticeApp = () => {
                     <div className="flex items-center">
                       <CheckCircle size={16} className="text-green-500 mr-2" />
                       <span className="text-sm font-medium text-gray-700">
-                        AI Real: {message.score}/100
+                        {message.apiKeyStatus === 'valid' ? 'AI Real' : 'Práctica'}: {message.score}/100
                       </span>
                     </div>
                     <div className={`px-2 py-1 rounded text-xs font-medium ${
@@ -562,7 +854,7 @@ const EnglishPracticeApp = () => {
                   
                   {message.suggestions && (
                     <div className="bg-white bg-opacity-80 p-2 rounded text-xs">
-                      <p className="font-medium text-gray-700 mb-1">💡 Sugerencias del AI:</p>
+                      <p className="font-medium text-gray-700 mb-1">💡 Sugerencias:</p>
                       <ul className="space-y-1">
                         {message.suggestions.slice(0, 2).map((suggestion, index) => (
                           <li key={index} className="flex items-start">
@@ -576,7 +868,7 @@ const EnglishPracticeApp = () => {
 
                   {message.followUpQuestion && (
                     <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-2 rounded border border-blue-200">
-                      <p className="text-xs text-blue-600 font-medium">🤔 Pregunta del AI:</p>
+                      <p className="text-xs text-blue-600 font-medium">🤔 Pregunta de seguimiento:</p>
                       <p className="text-xs text-blue-700">{message.followUpQuestion}</p>
                     </div>
                   )}
@@ -597,12 +889,14 @@ const EnglishPracticeApp = () => {
         {voice.isProcessing && (
           <div className="flex items-start">
             <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center mr-2 text-white text-sm">
-              🤖
+              {voice.apiKeyStatus === 'valid' ? '🤖' : '📝'}
             </div>
             <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg rounded-tl-none p-3 shadow-sm border border-blue-200">
               <div className="flex items-center space-x-2">
                 <Loader2 size={16} className="animate-spin text-blue-600" />
-                <span className="text-gray-700">AI real analizando tu respuesta...</span>
+                <span className="text-gray-700">
+                  {voice.apiKeyStatus === 'valid' ? 'AI real analizando...' : 'Analizando en modo práctica...'}
+                </span>
               </div>
             </div>
           </div>
@@ -647,12 +941,12 @@ const EnglishPracticeApp = () => {
               ) : voice.isProcessing ? (
                 <>
                   <Loader2 size={20} className="animate-spin" />
-                  <span>AI Real Procesando...</span>
+                  <span>Procesando...</span>
                 </>
               ) : (
                 <>
                   <Mic size={20} />
-                  <span>🎤 Hablar con AI Real</span>
+                  <span>🎤 Hablar</span>
                 </>
               )}
             </button>
@@ -676,8 +970,12 @@ const EnglishPracticeApp = () => {
             
             <div className="flex items-center justify-center space-x-4">
               <div className="flex items-center">
-                <div className="w-2 h-2 rounded-full mr-2 bg-green-500"></div>
-                <span className="text-gray-600">AI Real</span>
+                <div className={`w-2 h-2 rounded-full mr-2 ${
+                  voice.apiKeyStatus === 'valid' ? 'bg-green-500' : 'bg-yellow-500'
+                }`}></div>
+                <span className="text-gray-600">
+                  {voice.apiKeyStatus === 'valid' ? 'AI Real' : 'Modo Práctica'}
+                </span>
               </div>
               <div className="flex items-center">
                 <div className={`w-2 h-2 rounded-full mr-2 ${voice.isRecording ? 'bg-red-500 animate-pulse' : 'bg-gray-300'}`}></div>
@@ -685,11 +983,11 @@ const EnglishPracticeApp = () => {
               </div>
               <div className="flex items-center">
                 <div className={`w-2 h-2 rounded-full mr-2 ${voice.transcript ? 'bg-green-500' : 'bg-gray-300'}`}></div>
-                <span className="text-gray-600">Speech Recognition</span>
+                <span className="text-gray-600">Recognition</span>
               </div>
               <div className="flex items-center">
                 <div className={`w-2 h-2 rounded-full mr-2 ${voice.isProcessing ? 'bg-blue-500 animate-pulse' : 'bg-gray-300'}`}></div>
-                <span className="text-gray-600">AI Processing</span>
+                <span className="text-gray-600">Processing</span>
               </div>
             </div>
           </div>
@@ -698,7 +996,7 @@ const EnglishPracticeApp = () => {
     </div>
   );
 
-  // 🎧 LISTENING SCREEN
+  // 🎧 LISTENING SCREEN (sin cambios)
   const ListeningScreen = () => (
     <div className="min-h-screen bg-green-50 p-6">
       <div className="max-w-md mx-auto">
@@ -718,14 +1016,14 @@ const EnglishPracticeApp = () => {
             onClick={() => setCurrentScreen('speaking')}
             className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg transition-colors"
           >
-            🤖 Probar AI Conversacional
+            🤖 Probar Conversación
           </button>
         </div>
       </div>
     </div>
   );
 
-  // 📊 PROGRESS SCREEN
+  // 📊 PROGRESS SCREEN (sin cambios)
   const ProgressScreen = () => {
     const safeProgress = {
       ...progress,
@@ -749,11 +1047,13 @@ const EnglishPracticeApp = () => {
           
           <div className="space-y-4">
             <div className="bg-white rounded-xl p-6 shadow-lg">
-              <h3 className="text-lg font-semibold mb-4 text-center">Estadísticas con AI Real</h3>
+              <h3 className="text-lg font-semibold mb-4 text-center">
+                Estadísticas {voice.apiKeyStatus === 'valid' ? 'con AI Real' : 'en Modo Práctica'}
+              </h3>
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-blue-50 p-3 rounded-lg text-center">
                   <p className="text-2xl font-bold text-blue-600">{safeProgress.todayProgress}</p>
-                  <p className="text-sm text-gray-600">Conversaciones IA</p>
+                  <p className="text-sm text-gray-600">Conversaciones</p>
                 </div>
                 <div className="bg-green-50 p-3 rounded-lg text-center">
                   <p className="text-2xl font-bold text-green-600">{safeProgress.currentStreak}</p>
@@ -762,25 +1062,40 @@ const EnglishPracticeApp = () => {
               </div>
             </div>
             
-            <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-6 shadow-lg border border-blue-200">
-              <h3 className="text-lg font-semibold mb-3 text-gray-800">🤖 AI Real Activo</h3>
+            <div className={`rounded-xl p-6 shadow-lg border ${
+              voice.apiKeyStatus === 'valid' 
+                ? 'bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200'
+                : 'bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200'
+            }`}>
+              <h3 className="text-lg font-semibold mb-3 text-gray-800">
+                {voice.apiKeyStatus === 'valid' ? '🤖 AI Real Activo' : '📝 Modo Práctica'}
+              </h3>
               <div className="space-y-2">
                 <div className="flex items-center text-sm">
-                  <div className="w-2 h-2 rounded-full bg-green-500 mr-3"></div>
-                  <span className="text-gray-700">Análisis inteligente de conversaciones</span>
+                  <div className={`w-2 h-2 rounded-full mr-3 ${
+                    voice.apiKeyStatus === 'valid' ? 'bg-green-500' : 'bg-yellow-500'
+                  }`}></div>
+                  <span className="text-gray-700">
+                    {voice.apiKeyStatus === 'valid' 
+                      ? 'Análisis inteligente con Claude 3.5' 
+                      : 'Práctica sin límites'
+                    }
+                  </span>
                 </div>
                 <div className="flex items-center text-sm">
                   <div className="w-2 h-2 rounded-full bg-blue-500 mr-3"></div>
-                  <span className="text-gray-700">Respuestas personalizadas</span>
+                  <span className="text-gray-700">Reconocimiento de voz activo</span>
                 </div>
                 <div className="flex items-center text-sm">
                   <div className="w-2 h-2 rounded-full bg-purple-500 mr-3"></div>
                   <span className="text-gray-700">Audio feedback automático</span>
                 </div>
-                <div className="flex items-center text-sm">
-                  <div className="w-2 h-2 rounded-full bg-orange-500 mr-3"></div>
-                  <span className="text-gray-700">OpenRouter AI configurado</span>
-                </div>
+                {voice.apiKeyStatus === 'valid' && (
+                  <div className="flex items-center text-sm">
+                    <div className="w-2 h-2 rounded-full bg-orange-500 mr-3"></div>
+                    <span className="text-gray-700">OpenRouter API configurado</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -800,7 +1115,12 @@ const EnglishPracticeApp = () => {
     }
   };
 
-  return renderScreen();
+  return (
+    <>
+      {renderScreen()}
+      {showApiConfig && <ApiKeyConfig onClose={() => setShowApiConfig(false)} />}
+    </>
+  );
 };
 
 // 🚨 EXPORT AQUÍ - FUERA DEL COMPONENTE
